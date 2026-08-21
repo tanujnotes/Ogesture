@@ -12,11 +12,19 @@ You can now use gestures even with 3-button navigation enabled.
 
 ## Gestures supported
 
-| Gesture | Action |
-|---|---|
-| Swipe inward from the left or right edge | Back |
-| Swipe up from the bottom edge | Home |
-| Swipe up from the bottom edge and hold | Recents |
+- Swipe inward from the left edge 
+- Swipe inward from the left edge and hold
+- Swipe inward from the right edge
+- Swipe inward from the right edge and hold
+- Swipe up from the bottom edge
+- Swipe up from the bottom edge and hold
+
+## Actions supported
+- Home
+- Back
+- Recents
+
+Each gesture can be mapped to any action (or none)
 
 ## How it works
 

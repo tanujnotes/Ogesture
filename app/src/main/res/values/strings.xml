@@ -47,12 +47,18 @@
     <string name="reliability_autostart_note">Also enable the \"Autostart\" permission for Ogesture in your phone\'s settings (on Xiaomi: Security app › Permissions › Autostart). Without it, the gesture service can be killed in the background.</string>
 
     <string name="gestures_title">Gestures supported</string>
-    <string name="gesture_home_label">Home</string>
-    <string name="gesture_home_desc">Swipe up from the bottom edge.</string>
-    <string name="gesture_recents_label">Recents</string>
-    <string name="gesture_recents_desc">Swipe up from the bottom edge and hold.</string>
-    <string name="gesture_back_label">Back</string>
-    <string name="gesture_back_desc">Swipe inward from the left or right edge.</string>
+    <string name="gesture_bottom_label">Bottom</string>
+    <string name="gesture_bottom_desc">Swipe up from the bottom edge</string>
+    <string name="gesture_left_edge_label">Left Edge</string>
+    <string name="gesture_left_edge_desc">Swipe right from the left edge</string>
+    <string name="gesture_right_edge_label">Right Edge</string>
+    <string name="gesture_right_edge_desc">Swipe left from the right edge</string>
+    <string name="gesture_short_action_label">Swipe action</string>
+    <string name="gesture_long_action_label">Swipe and hold action</string>
+    <string name="action_name_none">None</string>
+    <string name="action_name_back">Back</string>
+    <string name="action_name_home">Home</string>
+    <string name="action_name_recents">Recents</string>
 
     <string name="compat_title">App compatibility</string>
     <string name="compat_screen_title">App compatibility</string>

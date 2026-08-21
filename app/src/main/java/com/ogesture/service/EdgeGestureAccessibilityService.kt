@@ -139,6 +139,7 @@ class EdgeGestureAccessibilityService : AccessibilityService() {
             GestureAction.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
             GestureAction.HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
             GestureAction.RECENTS -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+            GestureAction.NONE -> {}
         }
     }
 
