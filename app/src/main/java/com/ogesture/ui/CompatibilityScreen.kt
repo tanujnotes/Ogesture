@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ogesture.R
 import com.ogesture.data.appLabel
 import com.ogesture.data.cachedAppIcon
+import com.ogesture.data.AppEntry
+import com.ogesture.data.clearIconCache
 import com.ogesture.data.installedLaunchableApps
 import com.ogesture.data.loadAppIcon
 import kotlinx.coroutines.Dispatchers
@@ -132,8 +135,6 @@ fun CompatibilityScreen(onBack: () -> Unit, viewModel: MainViewModel = viewModel
                 }
             }
 
-            CompatSectionHeader(stringResource(R.string.compat_settings_header))
-            InfoCard(stringResource(R.string.compat_settings_note))
         }
     }
 }
@@ -176,9 +177,18 @@ private fun AppPickerScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val allApps = remember { installedLaunchableApps(context) }
+    // Enumerate launchable apps + load labels off the main thread so opening the picker never
+    // freezes the UI. Cancellation is automatic when the picker leaves composition.
+    val allApps by produceState<List<AppEntry>>(initialValue = emptyList()) {
+        value = withContext(Dispatchers.IO) { installedLaunchableApps(context) }
+    }
     val candidates = remember(allApps, excluded) {
         allApps.filter { it.packageName !in excluded }
+    }
+    // Clear the launcher-icon cache when the picker leaves composition so bitmaps don't outlive
+    // the feature (keeps the privacy statement accurate).
+    DisposableEffect(Unit) {
+        onDispose { clearIconCache() }
     }
     Scaffold(
         modifier = Modifier.fillMaxSize(),

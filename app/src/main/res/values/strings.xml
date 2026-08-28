@@ -4,18 +4,11 @@
     <string name="accessibility_service_label">Ogesture</string>
     <string name="accessibility_service_description">Performs Back, Home, and Recents when an edge zone is swiped.</string>
 
-    <string name="notification_channel_name">Edge Gestures</string>
-    <string name="notification_channel_description">Keeps the edge swipe overlays alive in the background.</string>
-    <string name="notification_running_title">Edge Gestures running</string>
-    <string name="notification_running_text">Swipe up from a configured edge zone to trigger an action.</string>
-
     <string name="setup_title">Setup</string>
-    <string name="permission_overlay">Display over other apps</string>
     <string name="permission_accessibility">Accessibility service</string>
     <string name="permission_granted">Granted</string>
     <string name="permission_not_granted">Not granted</string>
     <string name="permission_needs_rebind">Enabled in Settings, but Android lost the binding after the last app update. Open Accessibility settings, toggle Ogesture off and back on.</string>
-    <string name="permission_grant">Grant</string>
     <string name="permission_open_settings">Open settings</string>
 
     <string name="a11y_consent_title">Before you turn on Accessibility</string>
@@ -34,7 +27,6 @@
     <string name="master_switch_subtitle_ready">All set — flip the switch to start.</string>
     <string name="master_switch_subtitle_blocked">Grant everything above to enable.</string>
 
-    <string name="toast_gestures_off_overlay">Edge gestures turned off: allow \"Display over other apps\".</string>
     <string name="toast_gestures_off_accessibility">Edge gestures turned off: the accessibility service isn\'t running.</string>
     <string name="toast_gestures_off_battery">Edge gestures turned off: allow unrestricted battery usage.</string>
     <string name="toast_gestures_off_generic">Edge gestures turned off: they can\'t run right now.</string>
@@ -54,6 +46,28 @@
     <string name="gesture_back_label">Back</string>
     <string name="gesture_back_desc">Swipe inward from the left or right edge.</string>
 
+    <string name="gesture_areas_title">Gesture areas</string>
+    <string name="gesture_areas_screen_title">Gesture areas</string>
+    <string name="gesture_areas_entry_desc">Adjust where Back, Home and Recents gestures can start.</string>
+    <string name="gesture_areas_subtitle">Adjust where each gesture can start. Changes apply immediately.</string>
+    <string name="areas_back_header">Back</string>
+    <string name="areas_back_height_label">Activation height</string>
+    <string name="areas_back_height_hint">How much of the side edge can start Back, measured upward from the bottom.</string>
+    <string name="areas_back_sensitivity_label">Edge sensitivity</string>
+    <string name="areas_back_sensitivity_hint">How far inward from the side edge a touch may start.</string>
+    <string name="areas_cancel_back_label">Cancel Back</string>
+    <string name="areas_cancel_back_hint">Pull back toward the side edge before lifting to cancel Back.</string>
+    <string name="areas_bottom_header">Home &amp; Recents</string>
+    <string name="areas_bottom_shared_note">Home and Recents share the same bottom gesture region.</string>
+    <string name="areas_bottom_width_label">Activation width</string>
+    <string name="areas_bottom_width_hint">Width of the bottom area that can start Home or Recents.</string>
+    <string name="areas_bottom_sensitivity_label">Edge sensitivity</string>
+    <string name="areas_bottom_sensitivity_hint">How far above the bottom edge a touch may start.</string>
+    <string name="areas_cancel_home_label">Cancel Home</string>
+    <string name="areas_cancel_home_hint">Pull back down before lifting to cancel Home. It does not undo Recents after its hold action fires.</string>
+    <string name="areas_percent_value">%1$d%%</string>
+    <string name="areas_sensitivity_value">%1$.2f× (%2$d dp)</string>
+
     <string name="compat_title">App compatibility</string>
     <string name="compat_screen_title">App compatibility</string>
     <string name="compat_entry_desc">Turn Ogesture off inside apps that ignore gesture taps.</string>
@@ -63,8 +77,24 @@
     <string name="compat_add_app">Add app</string>
     <string name="compat_remove_app">Turn gestures back on for %1$s</string>
     <string name="compat_picker_title">Add app</string>
-    <string name="compat_settings_header">System screens</string>
-    <string name="compat_settings_note">Gestures also won\'t work on your phone\'s Settings app: Android hides overlay apps like Ogesture on Settings and other secure system screens. Use your phone\'s own navigation there.</string>
+
+    <string name="sysnav_title">System navigation</string>
+    <string name="sysnav_screen_title">System navigation</string>
+    <string name="sysnav_entry_desc">Optionally hide the OEM navigation buttons so Ogesture can fully replace them with gestures.</string>
+    <string name="sysnav_intro">On some Xiaomi/HyperOS devices the system three-button navigation bar can come back even after you switched to gesture navigation. This optional watchdog keeps it hidden while Ogesture handles Back, Home and Recents.</string>
+    <string name="sysnav_switch_title">Hide system navigation buttons</string>
+    <string name="sysnav_switch_desc">Keeps the Xiaomi/HyperOS three-button navigation bar hidden while Ogesture handles Back, Home and Recents.</string>
+    <string name="sysnav_unsupported">Not supported on this device. This option is for Xiaomi, Redmi and POCO devices running MIUI/HyperOS.</string>
+    <string name="sysnav_perm_granted">ADB permission granted</string>
+    <string name="sysnav_perm_required">ADB permission required</string>
+    <string name="sysnav_setup_intro">To let Ogesture hide the system navigation buttons, enable USB debugging on your phone, connect it to a computer with Android Platform Tools/ADB, and run this command once:</string>
+    <string name="sysnav_adb_cmd_windows">.\adb.exe shell pm grant com.ogesture android.permission.WRITE_SECURE_SETTINGS</string>
+    <string name="sysnav_adb_cmd_unix">adb shell pm grant com.ogesture android.permission.WRITE_SECURE_SETTINGS</string>
+    <string name="sysnav_adb_unix_label">macOS / Linux:</string>
+    <string name="sysnav_copy">Copy command</string>
+    <string name="sysnav_copied">Command copied to clipboard</string>
+    <string name="sysnav_setup_notes">Root is not required. The command needs to be run only once after installation, unless the permission is lost due to uninstall/reinstall or similar. Ogesture uses this permission only for the optional system-navigation feature. When the option is disabled, Ogesture stops enforcing these system settings and restores the previous navigation state.</string>
+    <string name="sysnav_needs_gestures">Turn Ogesture gestures on first — this option only hides the system buttons while Ogesture is actively providing navigation.</string>
 
     <string name="remember_title">Privacy and security</string>
     <string name="remember_open_source_prefix">This app is free,</string>
@@ -72,7 +102,7 @@
     <string name="remember_open_source_suffix">, and collects no data.</string>
     <string name="remember_read_the_full_prefix">Read the full</string>
     <string name="remember_privacy_policy_suffix">privacy policy.</string>
-    <string name="remember_restricted_screens">Android\'s security policy blocks gestures on certain screens, such as your phone\'s Settings.</string>
+    <string name="remember_on_device">Everything runs locally on your device — no internet, no ads, no analytics. Settings stay on this phone and are deleted when you uninstall the app.</string>
 
     <string name="footer_built_with">Built with</string>
     <string name="footer_by_team">by team</string>

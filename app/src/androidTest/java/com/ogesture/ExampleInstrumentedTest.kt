@@ -17,8 +17,13 @@ import org.junit.Assert.*
 class ExampleInstrumentedTest {
     @Test
     fun useAppContext() {
-        // Context of the app under test.
+        // Context of the app under test. The debug build adds a `.debug` applicationId
+        // suffix so it installs alongside the release app, so accept either form.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.ogesture", appContext.packageName)
+        val pkg = appContext.packageName
+        assertTrue(
+            "package should be com.ogesture or its debug variant, was $pkg",
+            pkg == "com.ogesture" || pkg == "com.ogesture.debug",
+        )
     }
 }

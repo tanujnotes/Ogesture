@@ -21,10 +21,25 @@ import android.widget.FrameLayout
 class HomeIndicator(
     context: Context,
     private val windowManager: WindowManager,
+    /**
+     * Resolved visual width of the home handle in *display pixels*. This is the SAME resolved
+     * width the production geometry helper ([com.ogesture.data.computeGestureZoneLayout])
+     * produces for the bottom gesture touch zone, so the visible bar matches the actual
+     * horizontal activation region 1:1 (10% → central 10% of the display, … 100% → full
+     * configured bottom activation width). Only the horizontal width follows the activation
+     * width; the invisible touch depth (bottom edge sensitivity) does NOT affect the bar —
+     * it only widens the touch zone vertically.
+     */
+    private val barWidthPx: Int = (BAR_WIDTH_DP * context.resources.displayMetrics.density).toInt(),
+    /**
+     * WindowManager layout type for the indicator window. Defaults to an accessibility
+     * overlay so the indicator survives on secure system screens (Settings, SubSettings)
+     * the way the touch zones do.
+     */
+    private val windowType: Int = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
 ) : OverlayIndicator {
 
     private val density = context.resources.displayMetrics.density
-    private val barWidthPx = (BAR_WIDTH_DP * density).toInt()
     private val barHeightPx = BAR_HEIGHT_DP * density
     private val radiusPx = ROUND_DP * density
     private val revealPx = REVEAL_DP * density
@@ -48,7 +63,7 @@ class HomeIndicator(
         val params = WindowManager.LayoutParams(
             barWidthPx,
             (barHeightPx + revealPx).toInt(),
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -108,7 +123,8 @@ class HomeIndicator(
     }
 
     private companion object {
-        const val BAR_WIDTH_DP = 108f
+        // Default handle width; matches the pre-configurability look at 80% activation width.
+        const val BAR_WIDTH_DP = 108
         const val BAR_HEIGHT_DP = 4f
         const val ROUND_DP = 1.5f
         const val REVEAL_DP = 4f

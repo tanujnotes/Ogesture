@@ -41,13 +41,16 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -80,11 +83,22 @@ import com.ogesture.ui.AccessibilityConsentDialog
 import com.ogesture.ui.AccessibilityStatus
 import com.ogesture.ui.CompatEntryCard
 import com.ogesture.ui.CompatibilityScreen
+import com.ogesture.ui.GestureAreasEntryCard
+import com.ogesture.ui.GestureAreasScreen
 import com.ogesture.ui.MainViewModel
 import com.ogesture.ui.PRIVACY_POLICY_URL
+import com.ogesture.ui.SystemNavigationEntryCard
+import com.ogesture.ui.SystemNavigationScreen
 import com.ogesture.ui.SetupCard
 import com.ogesture.ui.theme.OgestureTheme
 import kotlinx.coroutines.delay
+
+/**
+ * Lightweight, mutually-exclusive navigation destinations for the app's local Compose
+ * navigation (no Navigation Compose dependency). At most one secondary screen is active at
+ * a time; [AppScreen.MAIN] is the dashboard, the other two are reached via entry cards.
+ */
+enum class AppScreen { MAIN, GESTURE_AREAS, COMPATIBILITY, SYSTEM_NAVIGATION }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,12 +109,29 @@ class MainActivity : ComponentActivity() {
         window.isNavigationBarContrastEnforced = false
         setContent {
             OgestureTheme {
-                var showCompat by rememberSaveable { mutableStateOf(false) }
-                if (showCompat) {
-                    BackHandler { showCompat = false }
-                    CompatibilityScreen(onBack = { showCompat = false })
-                } else {
-                    MainScreen(onOpenCompat = { showCompat = true })
+                // Lightweight local navigation — no Navigation Compose dependency. A single
+                // mutually-exclusive destination so two secondary screens can't be active at once.
+                var screen by rememberSaveable { mutableStateOf(AppScreen.MAIN) }
+                when (screen) {
+                    AppScreen.GESTURE_AREAS -> {
+                        BackHandler { screen = AppScreen.MAIN }
+                        GestureAreasScreen(onBack = { screen = AppScreen.MAIN })
+                    }
+                    AppScreen.COMPATIBILITY -> {
+                        BackHandler { screen = AppScreen.MAIN }
+                        CompatibilityScreen(onBack = { screen = AppScreen.MAIN })
+                    }
+                    AppScreen.SYSTEM_NAVIGATION -> {
+                        BackHandler { screen = AppScreen.MAIN }
+                        SystemNavigationScreen(onBack = { screen = AppScreen.MAIN })
+                    }
+                    AppScreen.MAIN -> {
+                        MainScreen(
+                            onOpenGestureAreas = { screen = AppScreen.GESTURE_AREAS },
+                            onOpenCompat = { screen = AppScreen.COMPATIBILITY },
+                            onOpenSystemNav = { screen = AppScreen.SYSTEM_NAVIGATION },
+                        )
+                    }
                 }
             }
         }
@@ -109,53 +140,67 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = viewModel()) {
+private fun MainScreen(
+    onOpenGestureAreas: () -> Unit,
+    onOpenCompat: () -> Unit,
+    onOpenSystemNav: () -> Unit,
+    viewModel: MainViewModel = viewModel(),
+) {
     val context = LocalContext.current
     val masterEnabled by viewModel.masterEnabled.collectAsState()
 
-    var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var accessibilityStatus by remember { mutableStateOf(computeAccessibilityStatus(context)) }
     var batteryUnrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
     var showAccessibilityConsent by rememberSaveable { mutableStateOf(false) }
 
+    // Accessibility bound state comes from the service's StateFlow — no polling needed for that.
+    val bound by EdgeGestureAccessibilityService.bound.collectAsState()
+
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.addObserver(androidx.lifecycle.LifecycleEventObserver { _, event ->
+    // Lifecycle-safe observer: added in DisposableEffect and removed on dispose so navigation
+    // between screens can't accumulate observers.
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                overlayGranted = Settings.canDrawOverlays(context)
-                accessibilityStatus = computeAccessibilityStatus(context)
+                // Battery whitelist changes outside the app, so re-check on resume.
                 batteryUnrestricted = isBatteryUnrestricted(context)
+                // Accessibility enabled-in-settings can also change outside the app.
+                accessibilityStatus = computeAccessibilityStatus(context)
             }
-        })
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // While the screen is visible, re-poll the requirements every 1 s. The accessibility
-    // service can bind/unbind asynchronously (e.g. after the user toggles it in Settings, or
-    // after an APK reinstall), overlay/battery permissions can be revoked from system
-    // Settings, and there is no broadcast for any of it.
-    LaunchedEffect(Unit) {
-        var unhealthySeconds = 0
-        while (true) {
-            delay(1000)
-            overlayGranted = Settings.canDrawOverlays(context)
-            batteryUnrestricted = isBatteryUnrestricted(context)
+    // Accessibility *bound* comes from the service StateFlow above (event-driven, no polling).
+    // Keep the UI's accessibilityStatus in sync with it so the setup card reflects the live bind
+    // state without a 1 Hz loop. The static "enabled in settings" + battery parts are refreshed
+    // on resume. A bounded safety net handles the post-update rebind grace: if the service is
+    // unbound while master is on, re-check for a few seconds before concluding it's broken.
+    LaunchedEffect(bound) {
+        if (bound) {
+            // Service (re)bound — refresh the accessibility status so the setup card reflects it
+            // immediately, not only on the next ON_RESUME.
             accessibilityStatus = computeAccessibilityStatus(context)
-
-            // Safety net: if gestures are on but can no longer run, turn the switch off and
-            // tell the user why. Requiring the failure to persist a few seconds avoids
-            // reacting to the brief unbound window right after an app update.
-            val offReason: Int? = if (!viewModel.masterEnabled.value) null else when {
-                !overlayGranted -> R.string.toast_gestures_off_overlay
-                accessibilityStatus != AccessibilityStatus.BOUND -> R.string.toast_gestures_off_accessibility
-                !batteryUnrestricted -> R.string.toast_gestures_off_battery
-                else -> null
+        } else if (viewModel.masterEnabled.value) {
+            // Post-update rebind grace: the service briefly reports unbound right after an APK
+            // reinstall. Re-check a bounded number of times before disabling.
+            var unhealthyChecks = 0
+            while (!EdgeGestureAccessibilityService.bound.value && viewModel.masterEnabled.value && unhealthyChecks < DISABLE_AFTER_SECONDS) {
+                delay(1000)
+                unhealthyChecks++
+                batteryUnrestricted = isBatteryUnrestricted(context)
+                accessibilityStatus = computeAccessibilityStatus(context)
             }
-            if (offReason == null) {
-                unhealthySeconds = 0
-            } else if (++unhealthySeconds >= DISABLE_AFTER_SECONDS) {
-                unhealthySeconds = 0
+            // If still unbound after the grace window, disable gestures and tell the user.
+            if (!EdgeGestureAccessibilityService.bound.value && viewModel.masterEnabled.value) {
                 viewModel.setMasterEnabled(false)
-                Toast.makeText(context, offReason, Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    context,
+                    if (!batteryUnrestricted) R.string.toast_gestures_off_battery
+                    else R.string.toast_gestures_off_accessibility,
+                    Toast.LENGTH_LONG,
+                ).show()
             }
         }
     }
@@ -199,22 +244,14 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
             Spacer(modifier = Modifier.height(16.dp))
             MasterSwitchCard(
                 enabled = masterEnabled,
-                canEnable = overlayGranted && accessibilityReady && batteryUnrestricted,
+                canEnable = accessibilityReady && batteryUnrestricted,
                 onToggle = { viewModel.setMasterEnabled(it) },
             )
 
             SectionHeader(stringResource(R.string.setup_title))
             SetupCard(
-                overlayGranted = overlayGranted,
                 accessibilityStatus = accessibilityStatus,
                 batteryUnrestricted = batteryUnrestricted,
-                onRequestOverlay = {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}"),
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                },
                 // Play policy: the disclosure comes before every trip to Accessibility settings,
                 // including the post-update rebind, since that also re-enables the service.
                 onRequestAccessibility = { showAccessibilityConsent = true },
@@ -230,8 +267,14 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
             SectionHeader(stringResource(R.string.gestures_title))
             GesturesCard()
 
+            SectionHeader(stringResource(R.string.gesture_areas_title))
+            GestureAreasEntryCard(onClick = onOpenGestureAreas)
+
             SectionHeader(stringResource(R.string.compat_title))
             CompatEntryCard(onClick = onOpenCompat)
+
+            SectionHeader(stringResource(R.string.sysnav_title))
+            SystemNavigationEntryCard(onClick = onOpenSystemNav)
 
             SectionHeader(stringResource(R.string.remember_title))
             RememberCard()
@@ -441,7 +484,7 @@ private fun RememberCard() {
                 }
             }
             RememberPoint(openSourceText)
-            RememberPoint(AnnotatedString(stringResource(R.string.remember_restricted_screens)))
+            RememberPoint(AnnotatedString(stringResource(R.string.remember_on_device)))
         }
     }
 }

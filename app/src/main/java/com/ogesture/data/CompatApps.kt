@@ -51,6 +51,13 @@ private val iconCache = LruCache<String, Bitmap>(64)
 fun cachedAppIcon(packageName: String): Bitmap? = iconCache.get(packageName)
 
 /**
+ * Clears the process-wide icon cache. Called when the compatibility/picker UI is left so launcher
+ * bitmaps don't outlive the feature — keeps the privacy statement ("held only while the UI is
+ * in use") accurate.
+ */
+fun clearIconCache() { iconCache.evictAll() }
+
+/**
  * Rasterizes the app's launcher icon at [sizePx] and caches it; null if the app is gone.
  * Decoding an adaptive icon is slow enough to drop frames — call this off the main thread.
  */

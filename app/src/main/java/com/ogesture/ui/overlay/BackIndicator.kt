@@ -18,7 +18,9 @@ import android.widget.FrameLayout
  * the gesture arms, and retracts (or fades out) when the finger lifts.
  *
  * Lives in its own non-touchable full-height overlay window so it can be drawn without
- * affecting the touch zones.
+ * affecting the touch zones. The window type is supplied by the owner so the same
+ * indicator can be added as an accessibility overlay (trusted, works on secure screens)
+ * or — for any future caller — an application overlay.
  */
 class BackIndicator(
     context: Context,
@@ -31,6 +33,12 @@ class BackIndicator(
      * would slide out underneath the opaque bar and never be seen.
      */
     private val edgeOffsetPx: Int = 0,
+    /**
+     * WindowManager layout type for the indicator window. Defaults to an accessibility
+     * overlay so the indicator survives on secure system screens (Settings, SubSettings)
+     * the way the touch zones do.
+     */
+    private val windowType: Int = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
 ) : OverlayIndicator {
     private val density = context.resources.displayMetrics.density
     private val pillSizePx = (PILL_SIZE_DP * density)
@@ -48,6 +56,9 @@ class BackIndicator(
     private var windowHidden = false
     private val windowLocation = IntArray(2)
     private var anchorRawY = 0f
+    // Cached window top in display coordinates, captured once per gesture start so the per-MOVE
+    // pillY() path never calls getLocationOnScreen().
+    private var cachedWindowY = 0
 
     init {
         root.addView(arrow)
@@ -58,7 +69,7 @@ class BackIndicator(
         val params = WindowManager.LayoutParams(
             (pillSizePx + peekPx).toInt(),
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -115,6 +126,9 @@ class BackIndicator(
         arrow.scaleY = 1f
         arrow.alpha = 1f
         anchorRawY = rawY
+        // Capture the window's display Y once per gesture; reused by every onGestureProgress.
+        root.getLocationOnScreen(windowLocation)
+        cachedWindowY = windowLocation[1]
         arrow.translationY = pillY(rawY)
         applyProgress(0f)
     }
@@ -131,10 +145,10 @@ class BackIndicator(
     private fun followedRawY(rawY: Float): Float =
         anchorRawY + (rawY - anchorRawY) * FOLLOW_FRACTION
 
-    /** rawY is in display coordinates; the window may not start at display y=0. */
+    /** rawY is in display coordinates; the window may not start at display y=0. Uses the
+     *  cached [cachedWindowY] captured at gesture start — no getLocationOnScreen per MOVE. */
     private fun pillY(rawY: Float): Float {
-        root.getLocationOnScreen(windowLocation)
-        return rawY - windowLocation[1] - pillSizePx / 2f
+        return rawY - cachedWindowY - pillSizePx / 2f
     }
 
     fun onArmed() {
