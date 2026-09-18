@@ -9,7 +9,7 @@
     <string name="permission_granted">Granted</string>
     <string name="permission_not_granted">Not granted</string>
     <string name="permission_needs_rebind">Enabled in Settings, but Android lost the binding after the last app update. Open Accessibility settings, toggle Ogesture off and back on.</string>
-    <string name="permission_open_settings">Open settings</string>
+    <string name="permission_open_settings">Settings</string>
 
     <string name="a11y_consent_title">Before you turn on Accessibility</string>
     <string name="a11y_consent_why_label">Why Ogesture needs it</string>
@@ -34,7 +34,7 @@
 
     <string name="reliability_battery_label">Unrestricted battery usage</string>
     <string name="reliability_battery_on">Granted — the system won\'t sleep the gesture service.</string>
-    <string name="reliability_battery_off">Required. Without this, Android or your phone\'s battery manager can kill the gesture service in the background, so gestures can\'t run reliably.</string>
+    <string name="reliability_battery_off">Required — the system can otherwise kill the gesture service.</string>
     <string name="reliability_battery_action">Allow</string>
     <string name="reliability_samsung_note">Also open Settings › Battery › Background usage limits and make sure Ogesture is not in the \"Sleeping apps\" or \"Deep sleeping apps\" list.</string>
     <string name="reliability_autostart_note">Also enable the \"Autostart\" permission for Ogesture in your phone\'s settings (on Xiaomi: Security app › Permissions › Autostart). Without it, the gesture service can be killed in the background.</string>
