@@ -71,11 +71,14 @@ class EdgeOverlayController(
     // mid-hold passes to the app natively, which beats today's abort-and-drop.
     private var zonesHeld = false
 
-    // Set for the rare replay whose tap point lies under a visible indicator window (the
-    // back arrow's edge strip): the indicator must be hidden first — two stacked overlay windows exceed Android's 0.8
-    // obscuring-opacity cap for injected touches — and that hide is issued only at
-    // replay time, so those replays keep the INJECT_DELAY_MS grace for it to apply.
-    private var hideIndicatorsForReplay = false
+    // The zone whose indicator covers the tap point of a replay in flight, or null. That
+    // one indicator (the back arrow's edge strip) has to be hidden first — two stacked
+    // overlay windows exceed Android's 0.8 obscuring-opacity cap for injected touches — and
+    // the hide is issued only at replay time, so those replays keep the INJECT_DELAY_MS
+    // grace for it to apply. Only the covering indicator is hidden: the rule is about what
+    // sits over the tap point, so blanking the opposite edge cost a window update per
+    // replay and bought nothing.
+    private var indicatorHiddenForReplay: ZoneId? = null
 
     /** Display geometry the attached zones were laid out for. Null while nothing is attached. */
     private var lastGeometry: ScreenGeometry? = null
@@ -355,9 +358,10 @@ class EdgeOverlayController(
         // difference. A tap point under a still-visible indicator window is the
         // exception: that window is only hidden right here, so those replays need the
         // full grace for the hide to apply.
-        val underIndicator = indicators.values.any {
-            it.windowBounds()?.contains(first.x.toInt(), first.y.toInt()) == true
-        }
+        val coveringIndicator = indicators.entries.firstOrNull {
+            it.value.windowBounds()?.contains(first.x.toInt(), first.y.toInt()) == true
+        }?.key
+        val underIndicator = coveringIndicator != null
         val injectDelay = if (underIndicator) {
             INJECT_DELAY_MS
         } else {
@@ -369,12 +373,12 @@ class EdgeOverlayController(
                 if (underIndicator) " (under indicator, +${injectDelay}ms)" else "",
         )
         replaying = true
-        hideIndicatorsForReplay = underIndicator
+        indicatorHiddenForReplay = coveringIndicator
         applyZoneInteractivity()
         val finish = Runnable {
             if (replaying) {
                 replaying = false
-                hideIndicatorsForReplay = false
+                indicatorHiddenForReplay = null
                 applyZoneInteractivity()
             }
         }
@@ -405,8 +409,8 @@ class EdgeOverlayController(
      * zones, so hiding them costs nothing visually (the debug tint blinks — debug only).
      *
      * Indicators stay visible through held touches and replays — they ARE the gesture
-     * feedback — except the rare replay under an indicator window, and pass-through,
-     * where hiding doubles as the "gestures off here" cue.
+     * feedback — except the one indicator a replay is injecting underneath, and
+     * pass-through, where hiding doubles as the "gestures off here" cue.
      */
     private fun applyZoneInteractivity() {
         val zonesInteractive = !zonesHeld && !replaying && !passThrough
@@ -425,9 +429,8 @@ class EdgeOverlayController(
                 windowManager.updateViewLayout(view, lp)
             } catch (_: Throwable) { /* window may be mid-detach */ }
         }
-        val indicatorsHidden = passThrough || hideIndicatorsForReplay
-        for ((_, indicator) in indicators) {
-            indicator.setWindowHidden(indicatorsHidden)
+        for ((id, indicator) in indicators) {
+            indicator.setWindowHidden(passThrough || id == indicatorHiddenForReplay)
         }
     }
 
