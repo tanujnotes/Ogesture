@@ -7,13 +7,13 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import android.provider.Settings
 import android.text.TextUtils
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
+import androidx.annotation.StringRes
 import com.ogesture.R
 import com.ogesture.data.GestureAction
 import com.ogesture.data.SettingsRepository
@@ -29,7 +29,6 @@ class EdgeGestureAccessibilityService : AccessibilityService(), GestureDispatche
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private val handler = Handler(Looper.getMainLooper())
     private val repo by lazy { SettingsRepository.get(this) }
-    @Volatile private var masterEnabled = false
 
     // Owns the gesture-zone and indicator windows. Created when the service binds and
     // destroyed when it unbinds, so the windows follow the accessibility-service lifecycle
@@ -42,11 +41,10 @@ class EdgeGestureAccessibilityService : AccessibilityService(), GestureDispatche
     // secure screens and does not tie to a foreground service. The only requirement this
     // service can observe besides its own binding is unrestricted battery (the system and
     // OEM battery managers can still kill the process if it is restricted), so the watchdog
-    // now only re-checks that, and re-asserts the controller in case the master flow hasn't
-    // attached the zones yet (e.g. right after a rebind racing the datastore read).
+    // re-checks that in both directions and refreshes the IME list.
     private val watchdog = object : Runnable {
         override fun run() {
-            disableIfBroken()
+            syncMasterEnabled()
             refreshImePackages()
             handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
         }
@@ -78,13 +76,10 @@ class EdgeGestureAccessibilityService : AccessibilityService(), GestureDispatche
             dispatcher = this,
             scope = scope,
         ).also { it.start() }
-        scope.launch {
-            repo.masterEnabled.collect { enabled ->
-                masterEnabled = enabled
-                // The controller's own master flow attaches/detaches the zones; this just
-                // keeps the local flag in sync for the watchdog.
-            }
-        }
+        // Being here means the accessibility requirement has just been met. If that was the
+        // one thing missing, gestures come back now rather than up to a watchdog tick later;
+        // the controller's master flow then attaches the zones.
+        syncMasterEnabled()
         handler.removeCallbacks(watchdog)
         handler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
     }
@@ -112,21 +107,29 @@ class EdgeGestureAccessibilityService : AccessibilityService(), GestureDispatche
     }
 
     /**
-     * Background safety net: if gestures are enabled but unrestricted battery has been
-     * revoked, turn the switch off and tell the user. The accessibility service being bound
-     * is implied — this only runs from its own watchdog. The in-app screen covers the same
-     * cases (plus the accessibility-unbound case) faster while it is open.
+     * Background safety net, both ways. If gestures are on but something they need has gone
+     * away, turn the switch off and say why; if the app turned them off earlier and
+     * everything is back, turn them on again. The accessibility requirement is implied —
+     * this only runs while the service is bound. The in-app screen does the same, faster,
+     * while it is open; whichever gets there first wins and only that one tells the user.
+     *
+     * Which way to go is decided inside the store, not from a cached mirror of it — a mirror
+     * would still be empty on the first call from [onServiceConnected], and stale by an IO
+     * round trip afterwards. Each call is a no-op unless there was something to change.
      */
-    private fun disableIfBroken() {
-        if (!masterEnabled) return
-        if (isBatteryUnrestricted()) return
-        scope.launch { repo.setMasterEnabled(false) }
-        Toast.makeText(this, R.string.toast_gestures_off_battery, Toast.LENGTH_LONG).show()
+    private fun syncMasterEnabled() {
+        val missingReason = GestureRequirements.missingReason(this)
+        scope.launch {
+            if (missingReason != null) {
+                if (repo.disableForMissingRequirement()) toast(missingReason)
+            } else if (repo.restoreIfAutoDisabled()) {
+                toast(R.string.toast_gestures_back_on)
+            }
+        }
     }
 
-    private fun isBatteryUnrestricted(): Boolean {
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        return pm.isIgnoringBatteryOptimizations(packageName)
+    private fun toast(@StringRes message: Int) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

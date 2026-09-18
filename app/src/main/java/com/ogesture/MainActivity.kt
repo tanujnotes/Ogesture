@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -76,6 +75,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ogesture.service.EdgeGestureAccessibilityService
+import com.ogesture.service.GestureRequirements
 import com.ogesture.ui.AccessibilityConsentDialog
 import com.ogesture.ui.AccessibilityStatus
 import com.ogesture.ui.CompatEntryCard
@@ -114,7 +114,7 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
     val masterEnabled by viewModel.masterEnabled.collectAsState()
 
     var accessibilityStatus by remember { mutableStateOf(computeAccessibilityStatus(context)) }
-    var batteryUnrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
+    var batteryUnrestricted by remember { mutableStateOf(GestureRequirements.isBatteryUnrestricted(context)) }
     var showAccessibilityConsent by rememberSaveable { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -122,7 +122,7 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
         lifecycleOwner.lifecycle.addObserver(androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 accessibilityStatus = computeAccessibilityStatus(context)
-                batteryUnrestricted = isBatteryUnrestricted(context)
+                batteryUnrestricted = GestureRequirements.isBatteryUnrestricted(context)
             }
         })
     }
@@ -135,23 +135,31 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
         var unhealthySeconds = 0
         while (true) {
             delay(1000)
-            batteryUnrestricted = isBatteryUnrestricted(context)
+            batteryUnrestricted = GestureRequirements.isBatteryUnrestricted(context)
             accessibilityStatus = computeAccessibilityStatus(context)
 
-            // Safety net: if gestures are on but can no longer run, turn the switch off and
-            // tell the user why. Requiring the failure to persist a few seconds avoids
-            // reacting to the brief unbound window right after an app update.
-            val offReason: Int? = if (!viewModel.masterEnabled.value) null else when {
-                accessibilityStatus != AccessibilityStatus.BOUND -> R.string.toast_gestures_off_accessibility
-                !batteryUnrestricted -> R.string.toast_gestures_off_battery
-                else -> null
-            }
-            if (offReason == null) {
+            val missingReason = GestureRequirements.missingReason(context)
+            if (viewModel.masterEnabled.value) {
+                // Safety net: if gestures are on but can no longer run, turn the switch off
+                // and tell the user why. Requiring the failure to persist a few seconds
+                // avoids reacting to the brief unbound window right after an app update.
+                if (missingReason == null) {
+                    unhealthySeconds = 0
+                } else if (++unhealthySeconds >= DISABLE_AFTER_SECONDS) {
+                    unhealthySeconds = 0
+                    if (viewModel.disableForMissingRequirement()) {
+                        Toast.makeText(context, missingReason, Toast.LENGTH_LONG).show()
+                    }
+                }
+            } else {
                 unhealthySeconds = 0
-            } else if (++unhealthySeconds >= DISABLE_AFTER_SECONDS) {
-                unhealthySeconds = 0
-                viewModel.setMasterEnabled(false)
-                Toast.makeText(context, offReason, Toast.LENGTH_LONG).show()
+                // The mirror image: what the app switched off, the app switches back on as
+                // soon as everything it needs is back. No debounce here — granting a
+                // permission is deliberate, and a manual toggle has already cancelled this.
+                if (missingReason == null && viewModel.restoreIfAutoDisabled()) {
+                    Toast.makeText(context, R.string.toast_gestures_back_on, Toast.LENGTH_LONG)
+                        .show()
+                }
             }
         }
     }
@@ -509,11 +517,6 @@ private fun openAccessibilitySettings(context: Context) {
     val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     context.startActivity(intent)
-}
-
-private fun isBatteryUnrestricted(context: Context): Boolean {
-    val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-    return pm.isIgnoringBatteryOptimizations(context.packageName)
 }
 
 private fun computeAccessibilityStatus(context: android.content.Context): AccessibilityStatus {
