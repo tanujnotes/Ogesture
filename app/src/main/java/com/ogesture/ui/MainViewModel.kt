@@ -28,6 +28,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Turns gestures off over a requirement the user did not choose to give up. Returns
+     * whether it did — it won't if they had already switched off themselves.
+     */
+    suspend fun disableForMissingRequirement(): Boolean = repo.disableForMissingRequirement()
+
+    /**
+     * Puts gestures back the way the user had them, if the app was what turned them off.
+     * Returns whether it did, so the caller knows whether to say so.
+     */
+    suspend fun restoreIfAutoDisabled(): Boolean = repo.restoreIfAutoDisabled()
+
     val excludedApps: StateFlow<Set<String>> = repo.excludedApps.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000L),
