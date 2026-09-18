@@ -16,7 +16,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val masterEnabled: StateFlow<Boolean> = repo.masterEnabled.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000L),
-        initialValue = false,
+        initialValue = true,
     )
 
     fun setMasterEnabled(enabled: Boolean) {

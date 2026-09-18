@@ -18,10 +18,8 @@ class SettingsRepository private constructor(appContext: Context) {
 
     private val store = appContext.dataStore
 
-    // Distinct because store.data re-emits on a write to any key, and collectors here act on
-    // every emission — the second key added below would otherwise double that traffic.
     val masterEnabled: Flow<Boolean> =
-        store.data.map { it[KEY_MASTER] ?: false }.distinctUntilChanged()
+        store.data.map { it[KEY_MASTER] ?: DEFAULT_MASTER }.distinctUntilChanged()
 
     /** The user's own choice, which always cancels a pending auto-restore. */
     suspend fun setMasterEnabled(enabled: Boolean) {
@@ -31,30 +29,18 @@ class SettingsRepository private constructor(appContext: Context) {
         }
     }
 
-    suspend fun isMasterEnabled(): Boolean = store.data.first()[KEY_MASTER] ?: false
+    suspend fun isMasterEnabled(): Boolean = store.data.first()[KEY_MASTER] ?: DEFAULT_MASTER
 
-    /**
-     * Turns gestures off because something they need has gone away, remembering that the user
-     * did not ask for this — so [restoreIfAutoDisabled] can put it back. Both keys move in one
-     * transaction, so the pair is never observed half-updated.
-     *
-     * Deliberately a no-op once gestures are already off, which is what stops a manual off
-     * from being recorded as an automatic one and silently undone later: the watchers gate on
-     * a cached flag that lags this store, so one can still fire a tick after the user has hit
-     * the switch. Reading the persisted value here, inside the transaction, settles it however
-     * the two writes interleave. Returns whether this call is what turned them off, so of
-     * several watchers noticing the same loss only one announces it.
-     */
     suspend fun disableForMissingRequirement(): Boolean {
-        var disabled = false
+        var announce = false
         store.edit {
-            disabled = it[KEY_MASTER] == true
-            if (disabled) {
+            announce = it[KEY_MASTER] == true
+            if (it[KEY_MASTER] ?: DEFAULT_MASTER) {
                 it[KEY_MASTER] = false
                 it[KEY_AUTO_DISABLED] = true
             }
         }
-        return disabled
+        return announce
     }
 
     /**
@@ -87,6 +73,8 @@ class SettingsRepository private constructor(appContext: Context) {
     }
 
     companion object {
+        private const val DEFAULT_MASTER = true
+
         private val KEY_MASTER = booleanPreferencesKey("master_enabled")
         private val KEY_AUTO_DISABLED = booleanPreferencesKey("auto_disabled")
         private val KEY_EXCLUDED_APPS = stringSetPreferencesKey("excluded_apps")

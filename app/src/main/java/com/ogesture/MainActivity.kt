@@ -157,7 +157,7 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
                 // soon as everything it needs is back. No debounce here — granting a
                 // permission is deliberate, and a manual toggle has already cancelled this.
                 if (missingReason == null && viewModel.restoreIfAutoDisabled()) {
-                    Toast.makeText(context, R.string.toast_gestures_back_on, Toast.LENGTH_LONG)
+                    Toast.makeText(context, R.string.toast_gestures_on, Toast.LENGTH_LONG)
                         .show()
                 }
             }

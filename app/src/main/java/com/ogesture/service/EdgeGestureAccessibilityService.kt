@@ -123,7 +123,7 @@ class EdgeGestureAccessibilityService : AccessibilityService(), GestureDispatche
             if (missingReason != null) {
                 if (repo.disableForMissingRequirement()) toast(missingReason)
             } else if (repo.restoreIfAutoDisabled()) {
-                toast(R.string.toast_gestures_back_on)
+                toast(R.string.toast_gestures_on)
             }
         }
     }

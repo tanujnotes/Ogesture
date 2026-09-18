@@ -30,7 +30,7 @@
     <string name="toast_gestures_off_accessibility">Edge gestures turned off: the accessibility service isn\'t running.</string>
     <string name="toast_gestures_off_battery">Edge gestures turned off: allow unrestricted battery usage.</string>
     <string name="toast_gestures_off_generic">Edge gestures turned off: they can\'t run right now.</string>
-    <string name="toast_gestures_back_on">Edge gestures are back on.</string>
+    <string name="toast_gestures_on">Edge gestures are on.</string>
 
     <string name="reliability_battery_label">Unrestricted battery usage</string>
     <string name="reliability_battery_on">Granted — the system won\'t sleep the gesture service.</string>
