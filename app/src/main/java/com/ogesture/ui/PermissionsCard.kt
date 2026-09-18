@@ -32,15 +32,13 @@ import com.ogesture.ui.theme.ExtendedTheme
 enum class AccessibilityStatus { NOT_GRANTED, NEEDS_REBIND, BOUND }
 
 /**
- * Single card listing everything the gestures need to run: the two permissions
- * plus unrestricted battery usage.
+ * Single card listing everything the gestures need to run: the accessibility service
+ * (which owns the gesture-zone overlay windows) plus unrestricted battery usage.
  */
 @Composable
 fun SetupCard(
-    overlayGranted: Boolean,
     accessibilityStatus: AccessibilityStatus,
     batteryUnrestricted: Boolean,
-    onRequestOverlay: () -> Unit,
     onRequestAccessibility: () -> Unit,
     onRequestUnrestricted: () -> Unit,
     modifier: Modifier = Modifier,
@@ -56,21 +54,6 @@ fun SetupCard(
         Column(
             modifier = Modifier.padding(vertical = 8.dp),
         ) {
-            RequirementRow(
-                label = stringResource(R.string.permission_overlay),
-                state = if (overlayGranted) RowState.OK else RowState.MISSING,
-                subtitle = if (overlayGranted) {
-                    stringResource(R.string.permission_granted)
-                } else {
-                    stringResource(R.string.permission_not_granted)
-                },
-                actionLabel = stringResource(R.string.permission_grant),
-                onAction = onRequestOverlay,
-            )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-            )
             val (state, subtitle, actionLabel) = when (accessibilityStatus) {
                 AccessibilityStatus.BOUND -> Triple(
                     RowState.OK,

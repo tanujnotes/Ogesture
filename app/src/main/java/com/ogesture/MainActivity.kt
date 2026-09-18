@@ -113,7 +113,6 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
     val context = LocalContext.current
     val masterEnabled by viewModel.masterEnabled.collectAsState()
 
-    var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var accessibilityStatus by remember { mutableStateOf(computeAccessibilityStatus(context)) }
     var batteryUnrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
     var showAccessibilityConsent by rememberSaveable { mutableStateOf(false) }
@@ -122,7 +121,6 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.addObserver(androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                overlayGranted = Settings.canDrawOverlays(context)
                 accessibilityStatus = computeAccessibilityStatus(context)
                 batteryUnrestricted = isBatteryUnrestricted(context)
             }
@@ -131,13 +129,12 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
 
     // While the screen is visible, re-poll the requirements every 1 s. The accessibility
     // service can bind/unbind asynchronously (e.g. after the user toggles it in Settings, or
-    // after an APK reinstall), overlay/battery permissions can be revoked from system
-    // Settings, and there is no broadcast for any of it.
+    // after an APK reinstall), and battery permission can be revoked from system Settings,
+    // and there is no broadcast for either.
     LaunchedEffect(Unit) {
         var unhealthySeconds = 0
         while (true) {
             delay(1000)
-            overlayGranted = Settings.canDrawOverlays(context)
             batteryUnrestricted = isBatteryUnrestricted(context)
             accessibilityStatus = computeAccessibilityStatus(context)
 
@@ -145,7 +142,6 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
             // tell the user why. Requiring the failure to persist a few seconds avoids
             // reacting to the brief unbound window right after an app update.
             val offReason: Int? = if (!viewModel.masterEnabled.value) null else when {
-                !overlayGranted -> R.string.toast_gestures_off_overlay
                 accessibilityStatus != AccessibilityStatus.BOUND -> R.string.toast_gestures_off_accessibility
                 !batteryUnrestricted -> R.string.toast_gestures_off_battery
                 else -> null
@@ -199,22 +195,14 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
             Spacer(modifier = Modifier.height(16.dp))
             MasterSwitchCard(
                 enabled = masterEnabled,
-                canEnable = overlayGranted && accessibilityReady && batteryUnrestricted,
+                canEnable = accessibilityReady && batteryUnrestricted,
                 onToggle = { viewModel.setMasterEnabled(it) },
             )
 
             SectionHeader(stringResource(R.string.setup_title))
             SetupCard(
-                overlayGranted = overlayGranted,
                 accessibilityStatus = accessibilityStatus,
                 batteryUnrestricted = batteryUnrestricted,
-                onRequestOverlay = {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}"),
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                },
                 // Play policy: the disclosure comes before every trip to Accessibility settings,
                 // including the post-update rebind, since that also re-enables the service.
                 onRequestAccessibility = { showAccessibilityConsent = true },
@@ -441,7 +429,7 @@ private fun RememberCard() {
                 }
             }
             RememberPoint(openSourceText)
-            RememberPoint(AnnotatedString(stringResource(R.string.remember_restricted_screens)))
+            RememberPoint(AnnotatedString(stringResource(R.string.remember_on_device)))
         }
     }
 }

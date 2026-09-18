@@ -20,18 +20,14 @@ Some phone brands, like Xiaomi, don’t allow navigation gestures with third-par
 
 ## How it works
 
-Ogesture draws thin, invisible overlays along the edges of the screen and uses an accessibility service to perform the navigation actions when it detects a swipe.
+Ogesture draws thin, invisible overlays along the edges of the screen and performs the navigation actions when it detects a swipe. The overlays are accessibility-overlay windows owned by Ogesture's accessibility service, so they work even on secure system screens (such as Android Settings) and do not require the "Display over other apps" permission.
 
-It needs three permissions:
+It needs two permissions:
 
-1. **Display over other apps** — to place the edge overlays that detect swipes.
-2. **Accessibility service** — to perform the Back, Home, and Recents actions.
-3. **Unrestricted battery usage** — so the system doesn't kill the gesture service in the background.
+1. **Accessibility service** — owns the edge overlays that detect swipes and performs the Back, Home, and Recents actions.
+2. **Unrestricted battery usage** — so the system doesn't kill the accessibility service in the background.
 
 ---
-
-### Things to remember
-Android's security policy blocks gestures on certain screens, such as your phone's Settings pages.
 
 ### Privacy
 This app is free, open source, and collects no data. Everything runs locally on your device, and it does not have or need network permission.

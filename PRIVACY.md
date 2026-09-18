@@ -37,13 +37,9 @@ Ogesture does **not** request `QUERY_ALL_PACKAGES`. Its `<queries>` declaration 
 
 | Permission | Why it is needed |
 |---|---|
-| **Display over other apps** (`SYSTEM_ALERT_WINDOW`) | Draws the thin, invisible edge strips that detect your swipes. |
-| **Accessibility service** | Performs Back, Home, and Recents. See above. |
-| **Unrestricted battery usage** (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) | Stops the system from killing the gesture service in the background. |
-| **Foreground service** (`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`) | Keeps the edge strips running while you use other apps. |
-| **Post notifications** (`POST_NOTIFICATIONS`) | Shows the ongoing notification Android requires for that foreground service. |
+| **Accessibility service** | Owns the thin, invisible edge overlays that detect your swipes, and performs Back, Home, and Recents. See above. |
+| **Unrestricted battery usage** (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) | Stops the system from killing the accessibility service in the background. |
 | **Vibrate** (`VIBRATE`) | Haptic feedback when a gesture triggers. |
-| **Receive boot completed** (`RECEIVE_BOOT_COMPLETED`) | Restarts the gesture service after you reboot. |
 
 Ogesture also reads one system setting, `ENABLED_ACCESSIBILITY_SERVICES`, to check whether you have granted it accessibility access — so the app can show the correct setup state and turn gestures off if the permission goes away.
 

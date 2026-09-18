@@ -132,8 +132,6 @@ fun CompatibilityScreen(onBack: () -> Unit, viewModel: MainViewModel = viewModel
                 }
             }
 
-            CompatSectionHeader(stringResource(R.string.compat_settings_header))
-            InfoCard(stringResource(R.string.compat_settings_note))
         }
     }
 }

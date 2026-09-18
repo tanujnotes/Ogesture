@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ogesture.data.SettingsRepository
-import com.ogesture.service.EdgeOverlayService
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -22,9 +21,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setMasterEnabled(enabled: Boolean) {
         viewModelScope.launch {
+            // The accessibility service observes this flow and attaches/detaches the gesture
+            // zones itself, so toggling the switch is just a datastore write — no foreground
+            // service to start or stop anymore.
             repo.setMasterEnabled(enabled)
-            val ctx = getApplication<Application>()
-            if (enabled) EdgeOverlayService.start(ctx) else EdgeOverlayService.stop(ctx)
         }
     }
 

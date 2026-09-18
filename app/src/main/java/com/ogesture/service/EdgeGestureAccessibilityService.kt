@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -23,22 +24,29 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-class EdgeGestureAccessibilityService : AccessibilityService() {
+class EdgeGestureAccessibilityService : AccessibilityService(), GestureDispatcher {
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private val handler = Handler(Looper.getMainLooper())
     private val repo by lazy { SettingsRepository.get(this) }
     @Volatile private var masterEnabled = false
 
-    // The overlay foreground service is the fragile half of the gesture pipeline: Android — and
-    // Samsung battery management in particular — can kill it without killing this accessibility
-    // service, which the framework keeps bound and rebinds automatically. This watchdog re-asserts
-    // the overlay service periodically so the gesture zones come back on their own, instead of the
-    // user having to open the app and toggle the switch.
+    // Owns the gesture-zone and indicator windows. Created when the service binds and
+    // destroyed when it unbinds, so the windows follow the accessibility-service lifecycle
+    // exactly: Android rebinds the service after process death and the controller comes
+    // back with it, re-attaching zones if the master switch is still on — no foreground
+    // service or boot receiver is needed for that revival.
+    private var controller: EdgeOverlayController? = null
+
+    // The gesture zones are accessibility-overlay windows, which the system does not hide on
+    // secure screens and does not tie to a foreground service. The only requirement this
+    // service can observe besides its own binding is unrestricted battery (the system and
+    // OEM battery managers can still kill the process if it is restricted), so the watchdog
+    // now only re-checks that, and re-asserts the controller in case the master flow hasn't
+    // attached the zones yet (e.g. right after a rebind racing the datastore read).
     private val watchdog = object : Runnable {
         override fun run() {
             disableIfBroken()
-            ensureOverlayRunning()
             refreshImePackages()
             handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
         }
@@ -63,64 +71,62 @@ class EdgeGestureAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         refreshImePackages()
+        controller = EdgeOverlayController(
+            context = this,
+            windowManager = getSystemService(WINDOW_SERVICE) as android.view.WindowManager,
+            repo = repo,
+            dispatcher = this,
+            scope = scope,
+        ).also { it.start() }
         scope.launch {
             repo.masterEnabled.collect { enabled ->
                 masterEnabled = enabled
-                // Revive immediately when enabled — covers the common case where the whole
-                // process was killed and the framework has just rebound us.
-                if (enabled) ensureOverlayRunning()
+                // The controller's own master flow attaches/detaches the zones; this just
+                // keeps the local flag in sync for the watchdog.
             }
         }
         handler.removeCallbacks(watchdog)
         handler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        controller?.onConfigurationChanged(newConfig)
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
         handler.removeCallbacks(watchdog)
+        controller?.stop()
+        controller = null
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         instance = null
         handler.removeCallbacks(watchdog)
+        controller?.stop()
+        controller = null
         scope.cancel()
         super.onDestroy()
     }
 
     /**
-     * Background safety net: if gestures are enabled but a requirement this service can
-     * observe has gone away (overlay permission or unrestricted battery), turn the switch
-     * off and tell the user. The accessibility service being bound is implied — this only
-     * runs from its own watchdog. The in-app screen covers the same cases (plus the
-     * accessibility-unbound case) faster while it is open.
+     * Background safety net: if gestures are enabled but unrestricted battery has been
+     * revoked, turn the switch off and tell the user. The accessibility service being bound
+     * is implied — this only runs from its own watchdog. The in-app screen covers the same
+     * cases (plus the accessibility-unbound case) faster while it is open.
      */
     private fun disableIfBroken() {
         if (!masterEnabled) return
-        val reason = when {
-            !Settings.canDrawOverlays(this) -> R.string.toast_gestures_off_overlay
-            !isBatteryUnrestricted() -> R.string.toast_gestures_off_battery
-            else -> return
-        }
+        if (isBatteryUnrestricted()) return
         scope.launch { repo.setMasterEnabled(false) }
-        Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
+        Toast.makeText(this, R.string.toast_gestures_off_battery, Toast.LENGTH_LONG).show()
     }
 
     private fun isBatteryUnrestricted(): Boolean {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         return pm.isIgnoringBatteryOptimizations(packageName)
-    }
-
-    private fun ensureOverlayRunning() {
-        if (!masterEnabled || EdgeOverlayService.isRunning) return
-        if (!Settings.canDrawOverlays(this)) return
-        try {
-            // Apps holding SYSTEM_ALERT_WINDOW are exempt from background foreground-service
-            // start restrictions, so this is allowed from here whenever overlays are permitted.
-            EdgeOverlayService.start(this)
-        } catch (t: Throwable) {
-            Log.w(TAG, "Failed to revive overlay service", t)
-        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -134,7 +140,7 @@ class EdgeGestureAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() { /* no-op */ }
 
-    fun trigger(action: GestureAction) {
+    override fun trigger(action: GestureAction) {
         when (action) {
             GestureAction.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
             GestureAction.HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
@@ -147,7 +153,7 @@ class EdgeGestureAccessibilityService : AccessibilityService() {
      * underneath. Returns false if the gesture could not be dispatched; onDone always
      * runs otherwise, with whether the gesture played to completion.
      */
-    fun replay(gesture: GestureDescription, onDone: (completed: Boolean) -> Unit): Boolean =
+    override fun replay(gesture: GestureDescription, onDone: (completed: Boolean) -> Unit): Boolean =
         dispatchGesture(
             gesture,
             object : GestureResultCallback() {

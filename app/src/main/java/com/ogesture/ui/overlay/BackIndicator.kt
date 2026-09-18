@@ -18,7 +18,9 @@ import android.widget.FrameLayout
  * the gesture arms, and retracts (or fades out) when the finger lifts.
  *
  * Lives in its own non-touchable full-height overlay window so it can be drawn without
- * affecting the touch zones.
+ * affecting the touch zones. The window type is supplied by the owner so the same
+ * indicator can be added as an accessibility overlay (trusted, works on secure screens)
+ * or — for any future caller — an application overlay.
  */
 class BackIndicator(
     context: Context,
@@ -31,6 +33,12 @@ class BackIndicator(
      * would slide out underneath the opaque bar and never be seen.
      */
     private val edgeOffsetPx: Int = 0,
+    /**
+     * WindowManager layout type for the indicator window. Defaults to an accessibility
+     * overlay so the indicator survives on secure system screens (Settings, SubSettings)
+     * the way the touch zones do.
+     */
+    private val windowType: Int = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
 ) : OverlayIndicator {
     private val density = context.resources.displayMetrics.density
     private val pillSizePx = (PILL_SIZE_DP * density)
@@ -58,7 +66,7 @@ class BackIndicator(
         val params = WindowManager.LayoutParams(
             (pillSizePx + peekPx).toInt(),
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or

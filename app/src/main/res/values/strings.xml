@@ -4,18 +4,11 @@
     <string name="accessibility_service_label">Ogesture</string>
     <string name="accessibility_service_description">Performs Back, Home, and Recents when an edge zone is swiped.</string>
 
-    <string name="notification_channel_name">Edge Gestures</string>
-    <string name="notification_channel_description">Keeps the edge swipe overlays alive in the background.</string>
-    <string name="notification_running_title">Edge Gestures running</string>
-    <string name="notification_running_text">Swipe up from a configured edge zone to trigger an action.</string>
-
     <string name="setup_title">Setup</string>
-    <string name="permission_overlay">Display over other apps</string>
     <string name="permission_accessibility">Accessibility service</string>
     <string name="permission_granted">Granted</string>
     <string name="permission_not_granted">Not granted</string>
     <string name="permission_needs_rebind">Enabled in Settings, but Android lost the binding after the last app update. Open Accessibility settings, toggle Ogesture off and back on.</string>
-    <string name="permission_grant">Grant</string>
     <string name="permission_open_settings">Open settings</string>
 
     <string name="a11y_consent_title">Before you turn on Accessibility</string>
@@ -34,7 +27,6 @@
     <string name="master_switch_subtitle_ready">All set — flip the switch to start.</string>
     <string name="master_switch_subtitle_blocked">Grant everything above to enable.</string>
 
-    <string name="toast_gestures_off_overlay">Edge gestures turned off: allow \"Display over other apps\".</string>
     <string name="toast_gestures_off_accessibility">Edge gestures turned off: the accessibility service isn\'t running.</string>
     <string name="toast_gestures_off_battery">Edge gestures turned off: allow unrestricted battery usage.</string>
     <string name="toast_gestures_off_generic">Edge gestures turned off: they can\'t run right now.</string>
@@ -63,8 +55,6 @@
     <string name="compat_add_app">Add app</string>
     <string name="compat_remove_app">Turn gestures back on for %1$s</string>
     <string name="compat_picker_title">Add app</string>
-    <string name="compat_settings_header">System screens</string>
-    <string name="compat_settings_note">Gestures also won\'t work on your phone\'s Settings app: Android hides overlay apps like Ogesture on Settings and other secure system screens. Use your phone\'s own navigation there.</string>
 
     <string name="remember_title">Privacy and security</string>
     <string name="remember_open_source_prefix">This app is free,</string>
@@ -72,7 +62,7 @@
     <string name="remember_open_source_suffix">, and collects no data.</string>
     <string name="remember_read_the_full_prefix">Read the full</string>
     <string name="remember_privacy_policy_suffix">privacy policy.</string>
-    <string name="remember_restricted_screens">Android\'s security policy blocks gestures on certain screens, such as your phone\'s Settings.</string>
+    <string name="remember_on_device">Everything runs locally on your device — no internet, no ads, no analytics. Settings stay on this phone and are deleted when you uninstall the app.</string>
 
     <string name="footer_built_with">Built with</string>
     <string name="footer_by_team">by team</string>

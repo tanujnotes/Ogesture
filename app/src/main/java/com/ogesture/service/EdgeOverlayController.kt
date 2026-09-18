@@ -1,13 +1,7 @@
 package com.ogesture.service
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.accessibilityservice.GestureDescription
 import android.content.Context
-import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Path
 import android.graphics.PixelFormat
@@ -19,18 +13,12 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.provider.Settings
 import android.util.Log
 import android.view.Display
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
-import androidx.core.app.NotificationCompat
-import androidx.lifecycle.LifecycleService
-import androidx.lifecycle.lifecycleScope
-import com.ogesture.MainActivity
-import com.ogesture.R
 import com.ogesture.data.GESTURE_ZONES
 import com.ogesture.data.SettingsRepository
 import com.ogesture.data.ZoneConfig
@@ -38,16 +26,31 @@ import com.ogesture.data.ZoneId
 import com.ogesture.gesture.SwipeDetector
 import com.ogesture.gesture.TouchSample
 import com.ogesture.ui.overlay.BackIndicator
-import com.ogesture.ui.overlay.HomeIndicator
 import com.ogesture.ui.overlay.OverlayIndicator
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
 
-class EdgeOverlayService : LifecycleService() {
-
-    private lateinit var windowManager: WindowManager
-    private lateinit var repo: SettingsRepository
+/**
+ * Owns the gesture-zone and indicator windows. Extracted from the former `EdgeOverlayService`
+ * so the same logic can run under the active [EdgeGestureAccessibilityService] using trusted
+ * `TYPE_ACCESSIBILITY_OVERLAY` windows instead of `TYPE_APPLICATION_OVERLAY` + a foreground
+ * service. Accessibility overlays are not hidden by `HIDE_NON_SYSTEM_OVERLAY_WINDOWS` on secure
+ * screens (Settings, SubSettings), so gestures keep working there, and the system no longer
+ * shows the persistent "displaying over other apps" notification for the app.
+ *
+ * The controller is created and destroyed by the accessibility service and must only be
+ * touched from the main thread (window operations are main-thread only). [scope] is supplied
+ * by the owner so its cancellation is tied to the service lifecycle.
+ */
+class EdgeOverlayController(
+    private val context: Context,
+    private val windowManager: WindowManager,
+    private val repo: SettingsRepository,
+    private val dispatcher: GestureDispatcher,
+    private val scope: CoroutineScope,
+) {
     private val activeViews = mutableMapOf<ZoneId, View>()
     private val indicators = mutableMapOf<ZoneId, OverlayIndicator>()
     private var attached = false
@@ -69,8 +72,7 @@ class EdgeOverlayService : LifecycleService() {
     private var zonesHeld = false
 
     // Set for the rare replay whose tap point lies under a visible indicator window (the
-    // back arrow's edge strip, or the home handle when the nav bar is hidden): the
-    // indicator must be hidden first — two stacked overlay windows exceed Android's 0.8
+    // back arrow's edge strip): the indicator must be hidden first — two stacked overlay windows exceed Android's 0.8
     // obscuring-opacity cap for injected touches — and that hide is issued only at
     // replay time, so those replays keep the INJECT_DELAY_MS grace for it to apply.
     private var hideIndicatorsForReplay = false
@@ -90,33 +92,26 @@ class EdgeOverlayService : LifecycleService() {
         }
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        repo = SettingsRepository.get(this)
-        startInForeground()
-        isRunning = true
-        (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
+    /**
+     * Starts the controller: observes the master gesture switch and the per-app pass-through
+     * flow, and registers for display-geometry changes. Idempotent. Must be called once the
+     * owning accessibility service is connected.
+     */
+    fun start() {
+        (context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
             .registerDisplayListener(displayListener, mainHandler)
 
-        lifecycleScope.launch {
+        scope.launch {
             repo.masterEnabled.distinctUntilChanged().collect { enabled ->
                 if (!enabled) {
                     detachAll()
-                    stopSelf()
-                    return@collect
-                }
-                if (!Settings.canDrawOverlays(this@EdgeOverlayService)) {
-                    Log.w(TAG, "Overlay permission missing; stopping service")
-                    detachAll()
-                    stopSelf()
                     return@collect
                 }
                 rebuild(GESTURE_ZONES)
             }
         }
 
-        lifecycleScope.launch {
+        scope.launch {
             combine(
                 EdgeGestureAccessibilityService.foregroundPackage,
                 repo.excludedApps,
@@ -129,23 +124,20 @@ class EdgeOverlayService : LifecycleService() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        super.onStartCommand(intent, flags, startId)
-        return START_STICKY
-    }
-
-    override fun onDestroy() {
-        isRunning = false
+    /** Tears down every window and unregisters listeners. Safe to call more than once. */
+    fun stop() {
         try {
-            (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
+            (context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
                 .unregisterDisplayListener(displayListener)
         } catch (_: Throwable) { /* never registered */ }
         detachAll()
-        super.onDestroy()
     }
 
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
+    /**
+     * Called by the owner on configuration changes so the zones re-lay out for the new
+     * display geometry (rotation, density, multi-window, folding).
+     */
+    fun onConfigurationChanged(newConfig: Configuration) {
         rebuildIfGeometryChanged()
     }
 
@@ -179,7 +171,7 @@ class EdgeOverlayService : LifecycleService() {
     )
 
     private fun currentGeometry(): ScreenGeometry {
-        val density = resources.displayMetrics.density
+        val density = context.resources.displayMetrics.density
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val metrics = windowManager.currentWindowMetrics
             val nav = metrics.windowInsets.getInsets(WindowInsets.Type.navigationBars())
@@ -189,7 +181,7 @@ class EdgeOverlayService : LifecycleService() {
             )
         } else {
             @Suppress("DEPRECATION")
-            val metrics = resources.displayMetrics
+            val metrics = context.resources.displayMetrics
             ScreenGeometry(metrics.widthPixels, metrics.heightPixels, density, 0, 0, 0)
         }
     }
@@ -204,22 +196,23 @@ class EdgeOverlayService : LifecycleService() {
         val geometry = currentGeometry()
         lastGeometry = geometry
         for (zone in zones) {
-            val view = View(this).apply {
+            val view = View(context).apply {
                 // DEBUG_SHOW_ZONES tints the touch areas so they can be seen while testing.
                 setBackgroundColor(if (DEBUG_SHOW_ZONES) ZONE_DEBUG_COLOR else android.graphics.Color.TRANSPARENT)
             }
             val minDistanceDp = if (zone.id == ZoneId.BOTTOM) BOTTOM_MIN_DISTANCE_DP else SIDE_MIN_DISTANCE_DP
-            val armDistancePx = minDistanceDp * resources.displayMetrics.density
-            val indicator: OverlayIndicator
+            val armDistancePx = minDistanceDp * context.resources.displayMetrics.density
+            val indicator: OverlayIndicator?
             val feedback: SwipeDetector.Feedback?
             when (zone.id) {
                 ZoneId.LEFT_EDGE, ZoneId.RIGHT_EDGE -> {
                     val ind = BackIndicator(
-                        context = this,
+                        context = context,
                         windowManager = windowManager,
                         fromLeftEdge = zone.id == ZoneId.LEFT_EDGE,
                         armDistancePx = armDistancePx,
                         edgeOffsetPx = if (zone.id == ZoneId.LEFT_EDGE) geometry.navLeft else geometry.navRight,
+                        windowType = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                     )
                     indicator = ind
                     feedback = object : SwipeDetector.Feedback {
@@ -234,24 +227,17 @@ class EdgeOverlayService : LifecycleService() {
                     }
                 }
                 ZoneId.BOTTOM -> {
-                    val ind = HomeIndicator(
-                        context = this,
-                        windowManager = windowManager,
-                    )
-                    indicator = ind
-                    // The bar is static; it only lifts slightly while a bottom gesture is
-                    // in progress, then settles back flush with the edge.
-                    feedback = object : SwipeDetector.Feedback {
-                        override fun onStart(rawX: Float, rawY: Float) = ind.onGestureStart()
-                        override fun onProgress(distancePx: Float, rawX: Float, rawY: Float) = Unit
-                        override fun onArmed() = Unit
-                        override fun onEnd(fired: Boolean) = ind.onGestureEnd()
-                    }
+                    // No indicator for the bottom zone. As an accessibility overlay it would
+                    // stack above the 3-button bar — either drawn across the buttons or as a
+                    // second handle hovering just above them — and gesture-nav devices
+                    // already draw their own pill. The haptic on trigger is the feedback.
+                    indicator = null
+                    feedback = null
                 }
             }
             view.setOnTouchListener(
                 SwipeDetector(
-                    context = this,
+                    context = context,
                     direction = zone.swipeDirection,
                     onShortSwipe = { onZoneTriggered(zone, long = false) },
                     onLongSwipe = if (zone.longAction != null) {
@@ -286,8 +272,10 @@ class EdgeOverlayService : LifecycleService() {
                     }
                 }
                 activeViews[zone.id] = view
-                indicator.attach()
-                indicators[zone.id] = indicator
+                if (indicator != null) {
+                    indicator.attach()
+                    indicators[zone.id] = indicator
+                }
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to add overlay for ${zone.id}", t)
             }
@@ -302,7 +290,10 @@ class EdgeOverlayService : LifecycleService() {
             ind.detach()
         }
         indicators.clear()
-        if (activeViews.isEmpty()) return
+        if (activeViews.isEmpty()) {
+            attached = false
+            return
+        }
         for ((_, v) in activeViews) {
             try {
                 windowManager.removeView(v)
@@ -320,11 +311,6 @@ class EdgeOverlayService : LifecycleService() {
      */
     private fun replayUnusedTouch(samples: List<TouchSample>) {
         if (replaying || passThrough || samples.isEmpty()) return
-        val service = EdgeGestureAccessibilityService.instance
-        if (service == null) {
-            Log.w(TAG, "Accessibility service not bound; cannot replay touch")
-            return
-        }
         val first = samples.first()
         val last = samples.last()
         val movedPx = kotlin.math.hypot(last.x - first.x, last.y - first.y)
@@ -395,7 +381,7 @@ class EdgeOverlayService : LifecycleService() {
         // Safety net in case the result callback never arrives.
         mainHandler.postDelayed(finish, duration + injectDelay + 1_000L)
         mainHandler.postDelayed({
-            val dispatched = service.replay(gesture) { completed ->
+            val dispatched = dispatcher.replay(gesture) { completed ->
                 Log.d(TAG, "Replay finished, completed=$completed")
                 mainHandler.removeCallbacks(finish)
                 finish.run()
@@ -449,22 +435,17 @@ class EdgeOverlayService : LifecycleService() {
         val action = (if (long) zone.longAction else zone.action) ?: return
         // Side zones already ticked when their indicator armed.
         if (zone.id == ZoneId.BOTTOM) hapticTick()
-        val service = EdgeGestureAccessibilityService.instance
-        if (service == null) {
-            Log.w(TAG, "Accessibility service not bound; cannot fire $action")
-            return
-        }
-        service.trigger(action)
+        dispatcher.trigger(action)
     }
 
     private fun hapticTick() {
         val effect = VibrationEffect.createOneShot(12L, VibrationEffect.DEFAULT_AMPLITUDE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val mgr = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            val mgr = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
             mgr?.defaultVibrator?.vibrate(effect)
         } else {
             @Suppress("DEPRECATION")
-            val v = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            val v = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             v?.vibrate(effect)
         }
     }
@@ -474,28 +455,28 @@ class EdgeOverlayService : LifecycleService() {
         geometry: ScreenGeometry,
     ): WindowManager.LayoutParams {
         val thicknessPx = (zone.thicknessDp * geometry.density).toInt().coerceAtLeast(1)
-        // Each zone is extended across its own edge's nav-bar inset (zero for bar-free
-        // edges) and stops fitting insets, so it reaches the physical edge instead of
-        // floating next to the bar — the bar sits at the bottom in portrait and moves to a
-        // side in landscape with 3-button nav. Touches on the bar itself are still routed
-        // to the bar — it is a higher-Z system window — but a swipe that starts on the bar
-        // slips to the zone underneath the moment it leaves the bar (the bar is a
-        // "slippery" window), and the extra band just past the bar catches it. Without the
-        // extension, that slippery handoff would land beyond the zone and the bar's edge
-        // would have no working gesture.
+        // Each zone is pinned to its physical edge (insets are not fitted) and then pushed
+        // in by that edge's nav-bar inset (zero for bar-free edges), so it sits just past
+        // the bar — the bar sits at the bottom in portrait and moves to a side in landscape
+        // with 3-button nav. The zones are accessibility overlays, which the system stacks
+        // ABOVE the navigation bar, so a zone that reached across the inset would swallow
+        // every Back/Home/Recents button tap and hand it back only through the replay
+        // path. Keeping the zone off the bar costs no gesture: the bar is a "slippery"
+        // window, so a swipe that starts on it slips to whatever is under the finger the
+        // moment it leaves the bar — and that is the zone.
         val (widthPx, heightPx, gravity) = when (zone.id) {
             ZoneId.BOTTOM -> Triple(
                 (geometry.width * zone.lengthPercent / 100).coerceAtLeast(1),
-                thicknessPx + geometry.navBottom,
+                thicknessPx,
                 Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
             )
             ZoneId.LEFT_EDGE -> Triple(
-                thicknessPx + geometry.navLeft,
+                thicknessPx,
                 (geometry.height * zone.lengthPercent / 100).coerceAtLeast(1),
                 Gravity.START or Gravity.CENTER_VERTICAL,
             )
             ZoneId.RIGHT_EDGE -> Triple(
-                thicknessPx + geometry.navRight,
+                thicknessPx,
                 (geometry.height * zone.lengthPercent / 100).coerceAtLeast(1),
                 Gravity.END or Gravity.CENTER_VERTICAL,
             )
@@ -503,61 +484,27 @@ class EdgeOverlayService : LifecycleService() {
         return WindowManager.LayoutParams(
             widthPx,
             heightPx,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
             this.gravity = gravity
+            // x/y offset away from the gravity edge, i.e. clear of that edge's bar.
+            when (zone.id) {
+                ZoneId.BOTTOM -> y = geometry.navBottom
+                ZoneId.LEFT_EDGE -> x = geometry.navLeft
+                ZoneId.RIGHT_EDGE -> x = geometry.navRight
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 fitInsetsTypes = 0
             }
         }
     }
 
-    private fun startInForeground() {
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CHANNEL_ID) == null) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_MIN,
-            ).apply {
-                description = getString(R.string.notification_channel_description)
-                setShowBadge(false)
-            }
-            nm.createNotificationChannel(channel)
-        }
-        val openApp = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setContentTitle(getString(R.string.notification_running_title))
-            .setContentText(getString(R.string.notification_running_text))
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
-            .setContentIntent(openApp)
-            .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-    }
-
     companion object {
-        private const val TAG = "EdgeOverlayService"
-        private const val CHANNEL_ID = "edge_gesture"
-        private const val NOTIFICATION_ID = 1001
+        private const val TAG = "EdgeOverlayController"
         private const val SIDE_MIN_DISTANCE_DP = 24f
         private const val BOTTOM_MIN_DISTANCE_DP = 10f
         private const val MAX_REPLAY_MS = 3_000L
@@ -584,26 +531,22 @@ class EdgeOverlayService : LifecycleService() {
         // Set true to tint the gesture zones so their touch areas are visible while testing.
         private const val DEBUG_SHOW_ZONES = false
         private const val ZONE_DEBUG_COLOR = 0x552196F3 // translucent blue
-        const val ACTION_START = "com.ogesture.action.START_OVERLAY"
-
-        /**
-         * True between onCreate and onDestroy. Read by the accessibility service watchdog to
-         * revive this service if the system (e.g. Samsung battery management) killed it out from
-         * under us without going through the master switch.
-         */
-        @Volatile
-        var isRunning: Boolean = false
-            private set
-
-        fun start(context: Context) {
-            val intent = Intent(context, EdgeOverlayService::class.java).setAction(ACTION_START)
-            androidx.core.content.ContextCompat.startForegroundService(context, intent)
-        }
-
-        fun stop(context: Context) {
-            // stopService (not startService with a stop action) so a stop request arriving
-            // after the service has already stopped itself cannot re-create it.
-            context.stopService(Intent(context, EdgeOverlayService::class.java))
-        }
     }
+}
+
+/**
+ * Abstraction over the gesture-dispatch capabilities the controller needs from its owning
+ * accessibility service: firing navigation actions and re-injecting unused touches. Keeps
+ * the controller decoupled from the concrete service (and testable).
+ */
+interface GestureDispatcher {
+    /** Fires a navigation action (Back/Home/Recents). */
+    fun trigger(action: com.ogesture.data.GestureAction)
+
+    /**
+     * Re-injects a touch the overlay consumed but didn't use, so it reaches the UI
+     * underneath. Returns false if the gesture could not be dispatched; [onDone] always
+     * runs otherwise, with whether the gesture played to completion.
+     */
+    fun replay(gesture: GestureDescription, onDone: (completed: Boolean) -> Unit): Boolean
 }
