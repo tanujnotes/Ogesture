@@ -15,7 +15,8 @@ import android.widget.FrameLayout
 /**
  * A gesture-navigation style back arrow that peeks out from a side edge while the user
  * drags, mirroring the system back indicator: it slides out with the drag, pulses when
- * the gesture arms, and retracts (or fades out) when the finger lifts.
+ * the gesture arms, dims if the finger is dragged back to the edge to cancel, and retracts
+ * (or fades out) when the finger lifts.
  *
  * Lives in its own non-touchable full-height overlay window so it can be drawn without
  * affecting the touch zones. The window type is supplied by the owner so the same
@@ -146,7 +147,16 @@ class BackIndicator(
     }
 
     fun onArmed() {
+        arrow.alpha = 1f
         applyProgress(1f)
+    }
+
+    /**
+     * The finger came back to the edge: lifting now does nothing. The arrow dims so the
+     * cancel reads at a glance, and keeps tracking the finger in case it swipes out again.
+     */
+    fun onDisarmed() {
+        arrow.alpha = DISARMED_ALPHA
     }
 
     fun onGestureEnd(fired: Boolean) {
@@ -168,6 +178,7 @@ class BackIndicator(
     private companion object {
         const val PILL_SIZE_DP = 36f
         const val PEEK_DP = 10f
+        const val DISARMED_ALPHA = 0.4f
 
         // Vertical follow: the pill moves this fraction of the finger's vertical travel,
         // so it hints at the drag direction without tracking it.

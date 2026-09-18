@@ -204,6 +204,9 @@ class EdgeOverlayController(
                 setBackgroundColor(if (DEBUG_SHOW_ZONES) ZONE_DEBUG_COLOR else android.graphics.Color.TRANSPARENT)
             }
             val minDistanceDp = if (zone.id == ZoneId.BOTTOM) BOTTOM_MIN_DISTANCE_DP else SIDE_MIN_DISTANCE_DP
+            // Only Back is cancellable: its arrow slides back into the edge with the finger,
+            // so the cancel is visible. The bottom zone draws nothing to show one.
+            val cancelDistanceDp = if (zone.id == ZoneId.BOTTOM) null else SIDE_CANCEL_DISTANCE_DP
             val armDistancePx = minDistanceDp * context.resources.displayMetrics.density
             val indicator: OverlayIndicator?
             val feedback: SwipeDetector.Feedback?
@@ -224,6 +227,10 @@ class EdgeOverlayController(
                             ind.onGestureProgress(distancePx, rawY)
                         override fun onArmed() {
                             ind.onArmed()
+                            hapticTick()
+                        }
+                        override fun onDisarmed() {
+                            ind.onDisarmed()
                             hapticTick()
                         }
                         override fun onEnd(fired: Boolean) = ind.onGestureEnd(fired)
@@ -250,6 +257,7 @@ class EdgeOverlayController(
                     // handoff, so the finger has already travelled the bar's height before
                     // we get ACTION_DOWN — require only a short confirmation, not a full swipe.
                     minDistanceDp = minDistanceDp,
+                    cancelDistanceDp = cancelDistanceDp,
                     feedback = feedback,
                     onUnusedTouch = { samples -> replayUnusedTouch(samples) },
                     onStreamStart = {
@@ -518,6 +526,13 @@ class EdgeOverlayController(
     companion object {
         private const val TAG = "EdgeOverlayController"
         private const val SIDE_MIN_DISTANCE_DP = 24f
+
+        // An armed back swipe dragged back to within this distance of where it began is
+        // cancelled. The touch begins inside the 16dp edge zone, so this is "the finger is
+        // back at the edge" without demanding it retrace to its exact starting pixel; the
+        // 8dp gap below SIDE_MIN_DISTANCE_DP keeps finger jitter around the arm point from
+        // flickering between armed and cancelled.
+        private const val SIDE_CANCEL_DISTANCE_DP = 16f
         private const val BOTTOM_MIN_DISTANCE_DP = 10f
         private const val MAX_REPLAY_MS = 3_000L
 
