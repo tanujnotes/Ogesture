@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -35,9 +36,41 @@ class SettingsRepository private constructor(appContext: Context) {
         }
     }
 
+    fun getZoneConfigs(): Flow<List<ZoneConfig>> = store.data.map { prefs ->
+        DEFAULT_GESTURE_ZONES.map { defaultZone ->
+            val actionKey = stringPreferencesKey("zone_${defaultZone.id.name}_action")
+            val longActionKey = stringPreferencesKey("zone_${defaultZone.id.name}_long_action")
+            val action = prefs[actionKey]?.let { GestureAction.valueOf(it) } ?: defaultZone.action
+            val longAction = prefs[longActionKey]?.let { GestureAction.valueOf(it) } ?: defaultZone.longAction
+            defaultZone.copy(action = action, longAction = longAction)
+        }
+    }
+
+    suspend fun setZoneAction(zoneId: ZoneId, action: GestureAction) {
+        store.edit { prefs ->
+            prefs[stringPreferencesKey("zone_${zoneId.name}_action")] = action.name
+        }
+    }
+
+    suspend fun setZoneLongAction(zoneId: ZoneId, action: GestureAction?) {
+        store.edit { prefs ->
+            if (action != null) {
+                prefs[stringPreferencesKey("zone_${zoneId.name}_long_action")] = action.name
+            } else {
+                prefs.remove(stringPreferencesKey("zone_${zoneId.name}_long_action"))
+            }
+        }
+    }
+
     companion object {
         private val KEY_MASTER = booleanPreferencesKey("master_enabled")
         private val KEY_EXCLUDED_APPS = stringSetPreferencesKey("excluded_apps")
+
+        private val DEFAULT_GESTURE_ZONES = listOf(
+            ZoneConfig(ZoneId.BOTTOM, GestureAction.HOME, longAction = GestureAction.RECENTS, lengthPercent = 80, thicknessDp = 12),
+            ZoneConfig(ZoneId.LEFT_EDGE, GestureAction.BACK, longAction = GestureAction.NONE, lengthPercent = 80, thicknessDp = 16),
+            ZoneConfig(ZoneId.RIGHT_EDGE, GestureAction.NONE, longAction = GestureAction.NONE, lengthPercent = 80, thicknessDp = 16),
+        )
 
         @Volatile private var INSTANCE: SettingsRepository? = null
 

@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +36,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -75,6 +76,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ogesture.data.GestureAction
+import com.ogesture.data.ZoneId
 import com.ogesture.service.EdgeGestureAccessibilityService
 import com.ogesture.ui.AccessibilityConsentDialog
 import com.ogesture.ui.AccessibilityStatus
@@ -85,6 +88,8 @@ import com.ogesture.ui.PRIVACY_POLICY_URL
 import com.ogesture.ui.SetupCard
 import com.ogesture.ui.theme.OgestureTheme
 import kotlinx.coroutines.delay
+import androidx.core.net.toUri
+import kotlin.time.Duration.Companion.milliseconds
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,7 +141,7 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
     LaunchedEffect(Unit) {
         var unhealthySeconds = 0
         while (true) {
-            delay(1000)
+            delay(1000.milliseconds)
             overlayGranted = Settings.canDrawOverlays(context)
             batteryUnrestricted = isBatteryUnrestricted(context)
             accessibilityStatus = computeAccessibilityStatus(context)
@@ -211,7 +216,7 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
                 onRequestOverlay = {
                     val intent = Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}"),
+                        "package:${context.packageName}".toUri(),
                     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
                 },
@@ -221,7 +226,7 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
                 onRequestUnrestricted = {
                     val intent = Intent(
                         Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:${context.packageName}"),
+                        "package:${context.packageName}".toUri(),
                     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
                 },
@@ -316,7 +321,9 @@ private fun MasterSwitchCard(
 }
 
 @Composable
-private fun GesturesCard() {
+private fun GesturesCard(viewModel: MainViewModel = viewModel()) {
+    val zoneConfigs by viewModel.zoneConfigs.collectAsState()
+
     Card(
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(
@@ -325,53 +332,20 @@ private fun GesturesCard() {
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(modifier = Modifier.padding(vertical = 8.dp)) {
-            GestureRow(
-                label = stringResource(R.string.gesture_back_label),
-                description = stringResource(R.string.gesture_back_desc),
-            ) {
-                val color = MaterialTheme.colorScheme.onSecondaryContainer
-                Canvas(modifier = Modifier.size(14.dp)) {
-                    val stroke = 2.dp.toPx()
-                    val inset = stroke / 2
-                    val triangle = Path().apply {
-                        moveTo(size.width - inset, inset)
-                        lineTo(size.width - inset, size.height - inset)
-                        lineTo(inset, size.height / 2)
-                        close()
-                    }
-                    drawPath(
-                        path = triangle,
-                        color = color,
-                        style = Stroke(width = stroke, join = StrokeJoin.Round),
-                    )
-                }
-            }
-            GestureRow(
-                label = stringResource(R.string.gesture_home_label),
-                description = stringResource(R.string.gesture_home_desc),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(15.dp)
-                        .border(
-                            width = 2.dp,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            shape = CircleShape,
-                        ),
-                )
-            }
-            GestureRow(
-                label = stringResource(R.string.gesture_recents_label),
-                description = stringResource(R.string.gesture_recents_desc),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(14.dp)
-                        .border(
-                            width = 2.dp,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            shape = RoundedCornerShape(2.dp),
-                        ),
+            zoneConfigs.forEach { zone ->
+                GestureZoneRow(
+                    zone = zone,
+                    onActionChanged = { action ->
+                        if (action != null) {
+                            viewModel.setZoneAction(zone.id, action)
+                        }
+                    },
+                    onLongActionChanged = { action ->
+                        viewModel.setZoneLongAction(
+                            zone.id,
+                            action
+                        )
+                    },
                 )
             }
         }
@@ -379,11 +353,73 @@ private fun GesturesCard() {
 }
 
 @Composable
-private fun GestureRow(
-    label: String,
-    description: String,
-    badge: @Composable () -> Unit,
+private fun GestureZoneRow(
+    zone: com.ogesture.data.ZoneConfig,
+    onActionChanged: (GestureAction?) -> Unit,
+    onLongActionChanged: (GestureAction?) -> Unit,
 ) {
+    val zoneLabelRes = when (zone.id) {
+        ZoneId.BOTTOM -> R.string.gesture_bottom_label
+        ZoneId.LEFT_EDGE -> R.string.gesture_left_edge_label
+        ZoneId.RIGHT_EDGE -> R.string.gesture_right_edge_label
+    }
+    val zoneDescRes = when (zone.id) {
+        ZoneId.BOTTOM -> R.string.gesture_bottom_desc
+        ZoneId.LEFT_EDGE -> R.string.gesture_left_edge_desc
+        ZoneId.RIGHT_EDGE -> R.string.gesture_right_edge_desc
+    }
+    val badge: @Composable () -> Unit = when (zone.id) {
+        ZoneId.BOTTOM -> ({
+            Box(
+                modifier = Modifier
+                    .size(15.dp)
+                    .border(
+                        width = 2.dp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        shape = CircleShape,
+                    ),
+            )
+        })
+
+        ZoneId.LEFT_EDGE-> ({
+            val color = MaterialTheme.colorScheme.onSecondaryContainer
+            Canvas(modifier = Modifier.size(14.dp)) {
+                val stroke = 2.dp.toPx()
+                val inset = stroke / 2
+                val triangle = Path().apply {
+                    moveTo(size.width - inset, inset)
+                    lineTo(size.width - inset, size.height - inset)
+                    lineTo(inset, size.height / 2)
+                    close()
+                }
+                drawPath(
+                    path = triangle,
+                    color = color,
+                    style = Stroke(width = stroke, join = StrokeJoin.Round),
+                )
+            }
+        })
+
+        ZoneId.RIGHT_EDGE -> ({
+            val color = MaterialTheme.colorScheme.onSecondaryContainer
+            Canvas(modifier = Modifier.size(14.dp)) {
+                val stroke = 2.dp.toPx()
+                val inset = stroke / 2
+                val triangle = Path().apply {
+                    moveTo(inset, inset)
+                    lineTo(inset, size.height - inset)
+                    lineTo(size.width - inset, size.height / 2)
+                    close()
+                }
+                drawPath(
+                    path = triangle,
+                    color = color,
+                    style = Stroke(width = stroke, join = StrokeJoin.Round),
+                )
+            }
+        })
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -402,15 +438,85 @@ private fun GestureRow(
         ) {
             badge()
         }
-        Column {
-            Text(text = label, style = MaterialTheme.typography.titleSmall)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = stringResource(zoneLabelRes), style = MaterialTheme.typography.titleSmall)
             Text(
-                text = description,
+                text = stringResource(zoneDescRes),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.gesture_short_action_label),
+                style = MaterialTheme.typography.titleSmall
+            )
+            ActionDropdown(
+                selectedAction = zone.action,
+                onActionSelected = onActionChanged,
+            )
+        }
+        Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.gesture_long_action_label),
+                style = MaterialTheme.typography.titleSmall
+            )
+
+            ActionDropdown(
+                selectedAction = zone.longAction,
+                onActionSelected = onLongActionChanged,
+            )
+        }
     }
+}
+
+@Composable
+private fun ActionDropdown(
+    selectedAction: GestureAction,
+    onActionSelected: (GestureAction) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        Surface(
+            onClick = { expanded = true },
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            val selectedLabel = translateAction(selectedAction)
+            Text(
+                text = selectedLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth(0.4f),
+        ) {
+            GestureAction.entries.forEach { action ->
+                val labelText = translateAction(action)
+                DropdownMenuItem(
+                    text = { Text(labelText) },
+                    onClick = {
+                        onActionSelected(action)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun translateAction(selectedAction: GestureAction): String = when (selectedAction) {
+    GestureAction.NONE -> stringResource(R.string.action_name_none)
+    GestureAction.BACK -> stringResource(R.string.action_name_back)
+    GestureAction.HOME -> stringResource(R.string.action_name_home)
+    GestureAction.RECENTS -> stringResource(R.string.action_name_recents)
 }
 
 @Composable

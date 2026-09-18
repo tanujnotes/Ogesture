@@ -31,7 +31,6 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.ogesture.MainActivity
 import com.ogesture.R
-import com.ogesture.data.GESTURE_ZONES
 import com.ogesture.data.SettingsRepository
 import com.ogesture.data.ZoneConfig
 import com.ogesture.data.ZoneId
@@ -53,6 +52,7 @@ class EdgeOverlayService : LifecycleService() {
     private var attached = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private var replaying = false
+    private var currentZones: List<ZoneConfig> = emptyList()
 
     // True while the foreground app is on the user's excluded list: zones stay untouchable
     // so every touch reaches the app natively, at the cost of gestures in that app.
@@ -100,20 +100,26 @@ class EdgeOverlayService : LifecycleService() {
             .registerDisplayListener(displayListener, mainHandler)
 
         lifecycleScope.launch {
-            repo.masterEnabled.distinctUntilChanged().collect { enabled ->
-                if (!enabled) {
-                    detachAll()
-                    stopSelf()
-                    return@collect
+            combine(
+                repo.masterEnabled,
+                repo.getZoneConfigs(),
+            ) { enabled, zones -> enabled to zones }
+                .distinctUntilChanged()
+                .collect { (enabled, zones) ->
+                    currentZones = zones
+                    if (!enabled) {
+                        detachAll()
+                        stopSelf()
+                        return@collect
+                    }
+                    if (!Settings.canDrawOverlays(this@EdgeOverlayService)) {
+                        Log.w(TAG, "Overlay permission missing; stopping service")
+                        detachAll()
+                        stopSelf()
+                        return@collect
+                    }
+                    rebuild(zones)
                 }
-                if (!Settings.canDrawOverlays(this@EdgeOverlayService)) {
-                    Log.w(TAG, "Overlay permission missing; stopping service")
-                    detachAll()
-                    stopSelf()
-                    return@collect
-                }
-                rebuild(GESTURE_ZONES)
-            }
         }
 
         lifecycleScope.launch {
@@ -160,7 +166,7 @@ class EdgeOverlayService : LifecycleService() {
     private fun rebuildIfGeometryChanged() {
         if (activeViews.isEmpty()) return
         if (currentGeometry() == lastGeometry) return
-        rebuild(GESTURE_ZONES)
+        rebuild(currentZones)
     }
 
     /**
@@ -254,9 +260,9 @@ class EdgeOverlayService : LifecycleService() {
                     context = this,
                     direction = zone.swipeDirection,
                     onShortSwipe = { onZoneTriggered(zone, long = false) },
-                    onLongSwipe = if (zone.longAction != null) {
+                    onLongSwipe = run {
                         { onZoneTriggered(zone, long = true) }
-                    } else null,
+                    },
                     // Swipes over the nav bar reach the bottom zone via the bar's slippery
                     // handoff, so the finger has already travelled the bar's height before
                     // we get ACTION_DOWN — require only a short confirmation, not a full swipe.
@@ -446,7 +452,7 @@ class EdgeOverlayService : LifecycleService() {
     }
 
     private fun onZoneTriggered(zone: ZoneConfig, long: Boolean) {
-        val action = (if (long) zone.longAction else zone.action) ?: return
+        val action = (if (long) zone.longAction else zone.action)
         // Side zones already ticked when their indicator armed.
         if (zone.id == ZoneId.BOTTOM) hapticTick()
         val service = EdgeGestureAccessibilityService.instance
@@ -518,7 +524,7 @@ class EdgeOverlayService : LifecycleService() {
 
     private fun startInForeground() {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CHANNEL_ID) == null) {
+        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.notification_channel_name),
