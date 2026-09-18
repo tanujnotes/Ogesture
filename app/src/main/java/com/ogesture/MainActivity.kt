@@ -1,5 +1,6 @@
 package com.ogesture
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -10,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -17,6 +19,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,11 +36,20 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -57,9 +70,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
@@ -69,6 +84,7 @@ import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -116,6 +132,7 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
     var accessibilityStatus by remember { mutableStateOf(computeAccessibilityStatus(context)) }
     var batteryUnrestricted by remember { mutableStateOf(GestureRequirements.isBatteryUnrestricted(context)) }
     var showAccessibilityConsent by rememberSaveable { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -183,7 +200,57 @@ private fun MainScreen(onOpenCompat: () -> Unit, viewModel: MainViewModel = view
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
+                // In the title slot rather than the bar's own action slot, so it rides the
+                // title between the bar's expanded and collapsed rows instead of staying
+                // pinned to a corner.
+                title = {
+                    // The bar renders this twice — once for the collapsed row, once for the
+                    // expanded one — and cross-fades between them. An interactive child would
+                    // be duplicated, popping two menus at once, so only the copy that is
+                    // actually showing draws the button. The bar hands each copy a different
+                    // text style, which is what tells them apart.
+                    val isExpandedRow =
+                        LocalTextStyle.current.fontSize ==
+                                MaterialTheme.typography.headlineMedium.fontSize
+                    val drawsMenu = isExpandedRow != (scrollBehavior.state.collapsedFraction > 0.5f)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.app_name))
+                        if (drawsMenu) Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Filled.MoreVert,
+                                    contentDescription = stringResource(R.string.menu_content_description),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                offset = DpOffset(x = -MENU_EDGE_INSET, y = 0.dp),
+                            ) {
+                                OverflowItem(R.string.menu_rate, Icons.Filled.Star) {
+                                    showMenu = false
+                                    openUrl(context, PLAY_STORE_URL)
+                                }
+                                OverflowItem(R.string.menu_share, Icons.Filled.Share) {
+                                    showMenu = false
+                                    shareApp(context)
+                                }
+                                OverflowItem(R.string.menu_social, Icons.Filled.Person) {
+                                    showMenu = false
+                                    openUrl(context, SOCIAL_URL)
+                                }
+                                OverflowItem(R.string.menu_github, ImageVector.vectorResource(R.drawable.ic_code)) {
+                                    showMenu = false
+                                    openUrl(context, GITHUB_URL)
+                                }
+                            }
+                        }
+                    }
+                },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.largeTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -428,7 +495,6 @@ private fun RememberCard() {
                 withLink(LinkAnnotation.Url(GITHUB_URL, linkStyles())) {
                     append(stringResource(R.string.remember_open_source_link))
                 }
-                append(stringResource(R.string.remember_open_source_suffix))
                 append(" ")
                 append(stringResource(R.string.remember_read_the_full_prefix))
                 append(" ")
@@ -436,8 +502,8 @@ private fun RememberCard() {
                     append(stringResource(R.string.remember_privacy_policy_suffix))
                 }
             }
-            RememberPoint(openSourceText)
             RememberPoint(AnnotatedString(stringResource(R.string.remember_on_device)))
+            RememberPoint(openSourceText)
         }
     }
 }
@@ -449,12 +515,12 @@ private fun FooterCredit() {
         append(" ")
         appendInlineContent("heart", "♥")
         append(" ")
-        append(stringResource(R.string.footer_by_team))
+        append(stringResource(R.string.footer_by))
         append(" ")
         withLink(
             LinkAnnotation.Url(OLAUNCHER_PLAY_STORE_URL, linkStyles()),
         ) {
-            append(stringResource(R.string.footer_olauncher))
+            append(stringResource(R.string.footer_team_olauncher))
         }
     }
     val inlineContent = mapOf(
@@ -507,10 +573,74 @@ private fun RememberPoint(text: AnnotatedString) {
     }
 }
 
+@Composable
+private fun ColumnScope.OverflowItem(
+    @StringRes label: Int,
+    icon: ImageVector,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(stringResource(label)) },
+        leadingIcon = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = LocalContentColor.current.copy(alpha = MENU_ICON_ALPHA),
+                    modifier = Modifier.size(MENU_ICON_SIZE),
+                )
+                // On top of the gap the menu item already leaves after a leading icon.
+                Spacer(modifier = Modifier.width(MENU_ICON_EXTRA_GAP))
+            }
+        },
+        onClick = onClick,
+    )
+}
+
+/**
+ * Every destination is a web link, so none of them is guaranteed a handler — a device with
+ * no browser, or none with Play installed, would otherwise crash on the tap.
+ */
+private fun openUrl(context: Context, url: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, R.string.toast_no_app_for_link, Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun shareApp(context: Context) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, context.getString(R.string.share_text, PLAY_STORE_URL))
+    }
+    try {
+        context.startActivity(
+            Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, R.string.toast_no_app_for_link, Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** Keeps the overflow menu off the screen edge it would otherwise sit flush against. */
+private val MENU_EDGE_INSET = 20.dp
+
+/** Matches the gap the menu item leaves on its own, so the total is twice the default. */
+private val MENU_ICON_EXTRA_GAP = 4.dp
+
+private const val MENU_ICON_ALPHA = 0.5f
+
+/** 80% of the 24dp an Icon takes by default, so they sit quieter beside the labels. */
+private val MENU_ICON_SIZE = 19.dp
+
 /** Seconds the gesture requirements must stay unmet before the switch is auto-disabled. */
 private const val DISABLE_AFTER_SECONDS = 3
-private const val OLAUNCHER_PLAY_STORE_URL =
-    "https://play.google.com/store/apps/details?id=app.olauncher"
+private const val PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.ogesture"
+private const val SOCIAL_URL = "https://x.com/tanujnotes"
+private const val OLAUNCHER_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=app.olauncher"
 private const val GITHUB_URL = "https://github.com/tanujnotes/Ogesture"
 
 private fun openAccessibilitySettings(context: Context) {

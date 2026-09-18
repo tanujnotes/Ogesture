@@ -11,6 +11,14 @@
     <string name="permission_needs_rebind">Enabled in Settings, but Android lost the binding after the last app update. Open Accessibility settings, toggle Ogesture off and back on.</string>
     <string name="permission_open_settings">Settings</string>
 
+    <string name="menu_content_description">More</string>
+    <string name="menu_rate">Rate</string>
+    <string name="menu_share">Share</string>
+    <string name="menu_social">Social</string>
+    <string name="menu_github">GitHub</string>
+    <string name="share_text">Ogesture — edge gestures for any Android phone. %1$s</string>
+    <string name="toast_no_app_for_link">No app on this phone can open that link.</string>
+
     <string name="a11y_consent_title">Before you turn on Accessibility</string>
     <string name="a11y_consent_why_label">Why Ogesture needs it</string>
     <string name="a11y_consent_why_body">Android only lets an accessibility service perform Back, Home, and Recents. Ogesture uses it for nothing else — it runs one of those actions when you swipe in from a screen edge.</string>
@@ -58,14 +66,13 @@
     <string name="compat_picker_title">Add app</string>
 
     <string name="remember_title">Privacy and security</string>
-    <string name="remember_open_source_prefix">This app is free,</string>
-    <string name="remember_open_source_link">open-source</string>
-    <string name="remember_open_source_suffix">, and collects no data.</string>
+    <string name="remember_open_source_prefix">This app is</string>
+    <string name="remember_open_source_link">free &amp; open-source.</string>
     <string name="remember_read_the_full_prefix">Read the full</string>
     <string name="remember_privacy_policy_suffix">privacy policy.</string>
     <string name="remember_on_device">Everything runs locally on your device — no internet, no ads, no analytics. Settings stay on this phone and are deleted when you uninstall the app.</string>
 
     <string name="footer_built_with">Built with</string>
-    <string name="footer_by_team">by team</string>
-    <string name="footer_olauncher">Olauncher</string>
+    <string name="footer_by">by</string>
+    <string name="footer_team_olauncher">Team Olauncher</string>
 </resources>
