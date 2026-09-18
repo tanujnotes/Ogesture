@@ -330,10 +330,19 @@ class EdgeOverlayController(
             }
         }
         val rawDuration = last.timeMs - first.timeMs
+        val longPressTimeout = android.view.ViewConfiguration.getLongPressTimeout().toLong()
         val duration = if (movedPx < TAP_SLOP_PX) {
-            if (rawDuration >= android.view.ViewConfiguration.getLongPressTimeout()) {
-                // A deliberate hold: mirror it so the target's long-press fires too.
-                rawDuration.coerceAtMost(MAX_REPLAY_MS)
+            if (rawDuration >= longPressTimeout) {
+                // A deliberate hold. The stroke has to outlast the long-press timeout so the
+                // target's own long-press fires, but it does not have to re-enact the whole
+                // hold — and the zones stay untouchable for the length of the stroke, so
+                // mirroring a three-second press left the gesture edges dead for three
+                // seconds afterwards. The floor keeps the cap clear of a raised "touch and
+                // hold delay", where a flat 600ms would fall under the timeout and demote
+                // the hold to a click.
+                rawDuration.coerceAtMost(
+                    maxOf(HOLD_STROKE_CAP_MS, longPressTimeout + HOLD_TIMEOUT_MARGIN_MS),
+                )
             } else {
                 // A click intent: the press already physically happened, so the replay
                 // only needs a believable press, not a re-enactment — capping it is a
@@ -526,9 +535,16 @@ class EdgeOverlayController(
 
         // Cap for the synthetic press of a click-intent tap (held shorter than the system
         // long-press timeout). The click fires at stroke end, so every capped ms is
-        // perceived latency removed. Holds at or past the long-press timeout are
-        // mirrored instead, so the target's own long-press still fires.
+        // perceived latency removed. Holds at or past the long-press timeout get
+        // HOLD_STROKE_CAP_MS instead, which still outlasts the timeout.
         private const val TAP_STROKE_CAP_MS = 60L
+
+        // Cap for the synthetic press of a held tap. Long enough for the target's long-press
+        // to fire, short enough that the zones — untouchable until the stroke ends — are not
+        // dead for as long as the user happened to hold. Targets that measure the hold
+        // itself (drag pickup, press-to-record) see the capped press instead of the real one.
+        private const val HOLD_STROKE_CAP_MS = 600L
+        private const val HOLD_TIMEOUT_MARGIN_MS = 100L
         private const val TAP_SLOP_PX = 12f
 
         // Set true to tint the gesture zones so their touch areas are visible while testing.
